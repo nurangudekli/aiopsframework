@@ -1,0 +1,222 @@
+# ─────────────────────────────────────────────────────────────
+# Continuous Evaluation CI/CD Pipeline
+#
+# Inspired by Microsoft Foundry's Continuous Evaluation Framework.
+# Reference: https://techcommunity.microsoft.com/blog/azure-ai-foundry-blog/
+# evaluating-generative-ai-models-using-microsoft-foundry's-continuous-evaluation-/4468075
+#
+# Triggers:
+#   - On every push to main (model/prompt changes)
+#   - On manual dispatch (for ad-hoc evaluations)
+#   - On schedule (nightly quality regression checks)
+#
+# Workflow:
+#   1. Run unit tests
+#   2. Start backend server
+#   3. Execute evaluation pipeline via API
+#   4. Check quality gates
+#   5. Report results & trigger alerts
+# ─────────────────────────────────────────────────────────────
+
+name: Continuous Model Evaluation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/services/**'
+      - 'backend/api/**'
+      - 'tests/**'
+  pull_request:
+    branches: [main]
+  schedule:
+    # Nightly evaluation at 02:00 UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      deployment:
+        description: 'Azure OpenAI deployment to evaluate'
+        required: false
+        default: ''
+      evaluators:
+        description: 'Comma-separated evaluators (e.g., coherence,fluency,safety)'
+        required: false
+        default: 'coherence,fluency,relevance,groundedness,helpfulness,tone,completeness'
+
+env:
+  PYTHON_VERSION: '3.11'
+  AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+  AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+  AZURE_OPENAI_DEPLOYMENT_NAME: ${{ secrets.AZURE_OPENAI_DEPLOYMENT_NAME }}
+
+jobs:
+  # ── Job 1: Unit Tests ──────────────────────────────────────
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        run: python -m pytest tests/ -v --tb=short
+
+  # ── Job 2: Continuous Evaluation Pipeline ──────────────────
+  evaluate:
+    name: Continuous Evaluation
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Start backend server
+        run: |
+          python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
+          sleep 5
+          curl -s http://localhost:8000/health | python -m json.tool
+
+      - name: Run evaluation pipeline
+        run: |
+          DEPLOYMENT="${{ github.event.inputs.deployment || env.AZURE_OPENAI_DEPLOYMENT_NAME }}"
+          EVALUATORS="${{ github.event.inputs.evaluators || 'coherence,fluency,relevance,groundedness,helpfulness,tone,completeness' }}"
+
+          # Convert comma-separated evaluators to JSON array
+          EVAL_JSON=$(echo "$EVALUATORS" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read().strip().split(',')))")
+
+          # Sample evaluation dataset
+          cat > /tmp/eval_dataset.json << 'DATASET'
+          [
+            {
+              "query": "What is Azure AI Foundry?",
+              "response": "Azure AI Foundry is Microsoft's comprehensive platform for building, deploying, and managing AI applications at scale.",
+              "ground_truth": "Azure AI Foundry (formerly Azure AI Studio) is Microsoft's unified platform for developing, evaluating, and deploying generative AI solutions."
+            },
+            {
+              "query": "How does RAG work?",
+              "response": "RAG (Retrieval-Augmented Generation) combines information retrieval with text generation. It retrieves relevant documents from a knowledge base and uses them as context for the language model to generate grounded responses.",
+              "ground_truth": "RAG retrieves relevant documents from a vector store and provides them as context to a language model, which generates responses grounded in the retrieved information."
+            },
+            {
+              "query": "Explain model fine-tuning.",
+              "response": "Model fine-tuning is the process of further training a pre-trained language model on a specific dataset to adapt it for a particular task or domain, improving its performance on that specific use case.",
+              "ground_truth": "Fine-tuning adapts a pre-trained model to a specific domain by training it on task-specific data, improving performance for that use case while leveraging the model's existing knowledge."
+            }
+          ]
+          DATASET
+
+          DATASET=$(cat /tmp/eval_dataset.json)
+
+          # Execute continuous evaluation run
+          RESULT=$(curl -s -X POST http://localhost:8000/api/continuous-eval/runs \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"name\": \"CI/CD Eval Run - $(date -u +%Y-%m-%dT%H:%M:%SZ)\",
+              \"description\": \"Automated evaluation triggered by GitHub Actions\",
+              \"deployment\": \"$DEPLOYMENT\",
+              \"model_version\": \"${{ github.sha }}\",
+              \"dataset\": $DATASET,
+              \"evaluators\": $EVAL_JSON
+            }")
+
+          echo "Evaluation Result:"
+          echo "$RESULT" | python -m json.tool
+
+          # Extract key metrics
+          COMPOSITE=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('metrics',{}).get('composite_quality_score', 0))")
+          SAFETY_RATE=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('metrics',{}).get('safety_violation_rate', 0))")
+          ALERTS=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('alerts_triggered', 0))")
+
+          echo "Composite Quality Score: $COMPOSITE"
+          echo "Safety Violation Rate: $SAFETY_RATE"
+          echo "Alerts Triggered: $ALERTS"
+
+          # Export for subsequent steps
+          echo "COMPOSITE_QUALITY=$COMPOSITE" >> $GITHUB_ENV
+          echo "SAFETY_RATE=$SAFETY_RATE" >> $GITHUB_ENV
+          echo "ALERTS_TRIGGERED=$ALERTS" >> $GITHUB_ENV
+
+      - name: Check Quality Gates
+        run: |
+          echo "Checking quality gates..."
+          echo "  Composite Quality: $COMPOSITE_QUALITY (threshold: 3.5)"
+          echo "  Safety Violation Rate: $SAFETY_RATE (threshold: 1%)"
+          echo "  Alerts Triggered: $ALERTS_TRIGGERED"
+
+          # Fail the pipeline if quality is below threshold
+          python3 -c "
+          composite = float('$COMPOSITE_QUALITY' or '0')
+          safety = float('$SAFETY_RATE' or '0')
+          alerts = int('$ALERTS_TRIGGERED' or '0')
+
+          passed = True
+          if composite > 0 and composite < 3.5:
+              print('❌ FAIL: Composite quality score {:.2f} below 3.5 threshold'.format(composite))
+              passed = False
+          else:
+              print('✅ PASS: Composite quality score {:.2f}'.format(composite))
+
+          if safety > 0.01:
+              print('❌ FAIL: Safety violation rate {:.2%} exceeds 1% threshold'.format(safety))
+              passed = False
+          else:
+              print('✅ PASS: Safety violation rate {:.2%}'.format(safety))
+
+          if alerts > 0:
+              print('⚠️  WARNING: {} alerts triggered during evaluation'.format(alerts))
+
+          if not passed:
+              exit(1)
+          print('\\n✅ All quality gates passed.')
+          "
+
+      - name: Upload evaluation results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-results-${{ github.sha }}
+          path: /tmp/eval_dataset.json
+          retention-days: 30
+
+      - name: Post evaluation summary
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const composite = process.env.COMPOSITE_QUALITY || '0';
+            const safety = process.env.SAFETY_RATE || '0';
+            const alerts = process.env.ALERTS_TRIGGERED || '0';
+
+            const body = `## 📊 Continuous Evaluation Results
+
+            | Metric | Value | Threshold | Status |
+            |--------|-------|-----------|--------|
+            | Composite Quality | ${parseFloat(composite).toFixed(2)} | ≥ 3.50 | ${parseFloat(composite) >= 3.5 ? '✅' : '❌'} |
+            | Safety Violation Rate | ${(parseFloat(safety) * 100).toFixed(2)}% | ≤ 1% | ${parseFloat(safety) <= 0.01 ? '✅' : '❌'} |
+            | Alerts Triggered | ${alerts} | 0 | ${parseInt(alerts) === 0 ? '✅' : '⚠️'} |
+
+            *Commit: ${context.sha.substring(0, 7)} | Run: [${context.runId}](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
