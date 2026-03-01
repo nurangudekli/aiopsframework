@@ -73,6 +73,7 @@ jobs:
 
       # ── 6. Configure App Settings ─────────────────────
       - name: Set App Settings
+        continue-on-error: true
         uses: azure/cli@v2
         with:
           inlineScript: |
