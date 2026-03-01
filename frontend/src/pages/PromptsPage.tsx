@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { MessageSquare, Trash2, ChevronDown, ChevronUp, Copy, BookOpen } from 'lucide-react';
+import { Trash2, ChevronDown, ChevronUp, Copy, BookOpen } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import PageBanner from '../components/PageBanner';
 import { listPrompts, createPromptApi, deletePromptApi, seedSamplePrompts } from '../api/client';
 
 export default function PromptsPage() {
@@ -37,41 +36,17 @@ export default function PromptsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <MessageSquare size={24} /> Prompt Management
-          </h1>
-          <p className="text-gray-600 text-sm mt-1">
-            Version, template, and A/B test your prompts with full history tracking.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setShowCreate(!showCreate)}
-            className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700"
-          >
-            + New Prompt
-          </button>
-        </div>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-gray-600 text-sm">
+          Version, template, and A/B test your prompts with full history tracking.
+        </p>
+        <button
+          onClick={() => setShowCreate(!showCreate)}
+          className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700"
+        >
+          + New Prompt
+        </button>
       </div>
-
-      <PageBanner
-        title="How to use Prompt Management"
-        description="Create, version, and organise your prompt library. Use template variables for reusable prompts across experiments."
-        accentColor="indigo"
-        steps={[
-          { label: 'Browse existing prompts', detail: 'All saved prompts are listed with their name, description, and tags.' },
-          { label: 'Create a new prompt', detail: 'Click \"+ New Prompt\" to open the creation form — add a name, description, system message, and a prompt template.' },
-          { label: 'Use template variables', detail: 'Wrap dynamic values in double curly braces like {{customer_name}} — these are replaced at runtime.' },
-          { label: 'Organise with tags', detail: 'Tags are shown as badges and help filter and group related prompts.' },
-        ]}
-        tips={[
-          'Use the system message to set the model persona; the prompt template is the user-facing content.',
-          'Template variables (e.g. {{language}}, {{context}}) make prompts reusable across different inputs.',
-          'Version your prompts by creating new entries with incremented version numbers in the name.',
-        ]}
-      />
 
       {showCreate && (
         <div className="bg-white rounded-xl border p-6 mb-6">

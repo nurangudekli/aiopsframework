@@ -603,3 +603,30 @@ export interface SimulationResult {
   count: number;
   method: string;
 }
+
+// ── Data Sources ───
+export type DataSourceType = 'log_analytics' | 'cosmos_db' | 'blob_storage' | 'http';
+
+export interface DataSourceResult {
+  source_type: DataSourceType;
+  record_count: number;
+  records: Record<string, unknown>[];
+  metadata: Record<string, unknown>;
+}
+
+export interface FieldMappingPreview {
+  detected_mapping: Record<string, string>;
+  available_fields: string[];
+  golden_fields: string[];
+  sample_record: Record<string, unknown>;
+}
+
+export interface DataSourceImportResult {
+  status: string;
+  dataset_id?: string;
+  dataset_name?: string;
+  cases_imported?: number;
+  cases_skipped?: number;
+  documents_ingested?: number;
+  chunks_created?: number;
+}

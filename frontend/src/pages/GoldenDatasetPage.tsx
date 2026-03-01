@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Database, Upload, Plus, Trash2, Eye, ChevronDown, ChevronUp } from 'lucide-react';
+import { Upload, Plus, Trash2, Eye, ChevronDown, ChevronUp, Cloud, Database } from 'lucide-react';
 import {
   listGoldenDatasets,
   createGoldenDataset,
@@ -13,7 +13,7 @@ import type { GoldenDataset, GoldenDatasetDetail } from '../types';
 import { useMockToggle } from '../hooks/useMockToggle';
 import MockToggle from '../components/MockToggle';
 import { mockGoldenDatasets, mockGoldenDatasetDetail } from '../mocks';
-import PageBanner from '../components/PageBanner';
+import DataSourceImporter from '../components/DataSourceImporter';
 
 export default function GoldenDatasetPage() {
   const queryClient = useQueryClient();
@@ -85,16 +85,10 @@ export default function GoldenDatasetPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <Database className="text-emerald-600" size={28} />
-            Golden Datasets
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Manage reusable test case datasets with expected answers for model evaluation
-          </p>
-        </div>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm text-gray-500">
+          Manage reusable test case datasets with expected answers for model evaluation.
+        </p>
         <div className="flex gap-2">
           <MockToggle enabled={useMock} onToggle={toggleMock} />
           <button
@@ -106,22 +100,12 @@ export default function GoldenDatasetPage() {
         </div>
       </div>
 
-      <PageBanner
-        title="How to use Golden Datasets"
-        description="Create and manage curated test case datasets with expected answers for repeatable model evaluation and regression testing."
-        accentColor="emerald"
-        steps={[
-          { label: 'Create a dataset', detail: 'Click \"+ New Dataset\" to open the form. Give it a name and description.' },
-          { label: 'Upload or paste test cases', detail: 'Upload an Excel, CSV, or JSON file with question/expected_answer/context/category columns, or paste a JSON array.' },
-          { label: 'Browse datasets', detail: 'Existing datasets are listed with name, case count, source file, and creation date.' },
-          { label: 'Expand to preview cases', detail: 'Click a dataset row to see the first 20 test cases in a table with question, expected answer, and category.' },
-          { label: 'Delete when no longer needed', detail: 'Use the trash icon to remove a dataset (with confirmation).' },
-        ]}
-        tips={[
-          'Golden datasets are used by the Migration Pipeline to compare model outputs against expected answers.',
-          'Include a variety of categories (e.g. billing, technical, edge cases) for comprehensive testing.',
-          'CSV files should have columns: question, expected_answer, context (optional), category (optional).',
-        ]}
+      {/* Import from Environment Data Source */}
+      <DataSourceImporter
+        importTargets={['golden']}
+        onGoldenImported={() => {
+          queryClient.invalidateQueries({ queryKey: ['golden-datasets'] });
+        }}
       />
 
       {/* Create Form */}

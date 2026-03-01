@@ -158,7 +158,7 @@ async def _call_azure_openai(
     model_lower = deployment.lower()
     is_reasoning = any(model_lower.startswith(m) for m in REASONING_MODELS)
     if is_reasoning and not api_version:
-        api_version = "2025-06-01"
+        api_version = "2025-03-01-preview"
 
     client = AsyncAzureOpenAI(
         api_key=api_key or settings.azure_openai_api_key,

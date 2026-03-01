@@ -5,10 +5,13 @@ Provides a pluggable Retrieval-Augmented Generation pipeline:
   1. Document ingestion (chunking, embedding)
   2. Vector search (via in-memory FAISS or external vector DB)
   3. Context-augmented generation
+  4. File parsing (PDF, DOCX, TXT, CSV, Markdown)
+  5. URL scraping for web content
 """
 
 from __future__ import annotations
 
+import io
 import logging
 import re
 from dataclasses import dataclass, field
@@ -206,3 +209,126 @@ class RAGPipeline:
             ],
             "error": resp.error,
         }
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Return stats about the current vector store."""
+        chunks = self.vector_store.chunks
+        doc_ids = set(c.doc_id for c in chunks)
+        total_chars = sum(len(c.text) for c in chunks)
+        return {
+            "total_chunks": len(chunks),
+            "total_documents": len(doc_ids),
+            "document_ids": sorted(doc_ids),
+            "total_characters": total_chars,
+            "chunk_size": self.chunk_size,
+            "chunk_overlap": self.chunk_overlap,
+            "top_k": self.top_k,
+        }
+
+
+# ── File parsing helpers ───────────────────────────────────────
+def parse_file_to_text(filename: str, content: bytes) -> str:
+    """Extract plain text from various file formats."""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+    if ext == "txt" or ext == "md":
+        return content.decode("utf-8", errors="replace")
+
+    if ext == "csv":
+        import csv
+        reader = csv.reader(io.StringIO(content.decode("utf-8", errors="replace")))
+        rows = list(reader)
+        return "\n".join(", ".join(row) for row in rows)
+
+    if ext == "json" or ext == "jsonl":
+        import json
+        text_parts: List[str] = []
+        if ext == "jsonl":
+            for line in content.decode("utf-8", errors="replace").strip().split("\n"):
+                if line.strip():
+                    obj = json.loads(line)
+                    text_parts.append(json.dumps(obj, indent=2))
+        else:
+            data = json.loads(content.decode("utf-8", errors="replace"))
+            if isinstance(data, list):
+                for item in data:
+                    text_parts.append(json.dumps(item, indent=2))
+            else:
+                text_parts.append(json.dumps(data, indent=2))
+        return "\n\n".join(text_parts)
+
+    if ext == "pdf":
+        try:
+            import fitz  # PyMuPDF
+            doc = fitz.open(stream=content, filetype="pdf")
+            pages = [page.get_text() for page in doc]
+            doc.close()
+            return "\n\n".join(pages)
+        except ImportError:
+            logger.warning("PyMuPDF (fitz) not installed; PDF parsing unavailable.")
+            return content.decode("utf-8", errors="replace")
+
+    if ext in ("docx",):
+        try:
+            from docx import Document as DocxDocument
+            doc = DocxDocument(io.BytesIO(content))
+            return "\n\n".join(p.text for p in doc.paragraphs if p.text.strip())
+        except ImportError:
+            logger.warning("python-docx not installed; DOCX parsing unavailable.")
+            return content.decode("utf-8", errors="replace")
+
+    # Fallback: treat as plain text
+    return content.decode("utf-8", errors="replace")
+
+
+# ── URL scraping helper ────────────────────────────────────────
+async def scrape_url(url: str) -> str:
+    """Fetch a URL and extract readable text content."""
+    import httpx
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(url, follow_redirects=True)
+        resp.raise_for_status()
+        content_type = resp.headers.get("content-type", "")
+
+        if "application/json" in content_type:
+            import json
+            return json.dumps(resp.json(), indent=2)
+
+        html = resp.text
+
+    # Simple HTML → text extraction (strip tags)
+    try:
+        from html.parser import HTMLParser
+
+        class _TextExtractor(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self._parts: List[str] = []
+                self._skip = False
+
+            def handle_starttag(self, tag, attrs):
+                if tag in ("script", "style", "nav", "footer", "header"):
+                    self._skip = True
+
+            def handle_endtag(self, tag):
+                if tag in ("script", "style", "nav", "footer", "header"):
+                    self._skip = False
+                if tag in ("p", "div", "br", "h1", "h2", "h3", "h4", "li", "tr"):
+                    self._parts.append("\n")
+
+            def handle_data(self, data):
+                if not self._skip:
+                    cleaned = data.strip()
+                    if cleaned:
+                        self._parts.append(cleaned)
+
+        extractor = _TextExtractor()
+        extractor.feed(html)
+        text = " ".join(extractor._parts)
+        # Collapse whitespace
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+    except Exception:
+        # Fallback: regex strip tags
+        return re.sub(r"<[^>]+>", " ", html)

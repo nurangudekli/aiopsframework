@@ -52,6 +52,10 @@ dependencies = [
     "azure-mgmt-resource>=23.0.0",
     "azure-mgmt-subscription>=3.0.0",
     "azure-mgmt-loganalytics>=13.0.0",
+    # Azure Cosmos DB
+    "azure-cosmos>=4.7.0",
+    # Azure Blob Storage
+    "azure-storage-blob>=12.19.0",
     # Azure AI Foundry Evaluation SDK
     "azure-ai-evaluation>=1.0.0",
 ]

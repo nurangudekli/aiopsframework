@@ -21,7 +21,6 @@ import {
   ToggleLeft,
   ToggleRight,
 } from 'lucide-react';
-import PageBanner from '../components/PageBanner';
 import ProviderSelect from '../components/ProviderSelect';
 
 export default function EndpointsPage() {
@@ -60,10 +59,10 @@ export default function EndpointsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-1">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Key size={24} /> Model Endpoints
-        </h1>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-gray-600 text-sm">
+          Register your model endpoints here — just provide the URL and API key.
+        </p>
         <button
           onClick={() => setShowForm(true)}
           className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700"
@@ -71,26 +70,6 @@ export default function EndpointsPage() {
           <Plus size={16} /> Add Model Endpoint
         </button>
       </div>
-      <p className="text-gray-600 text-sm mb-4">
-        Register your model endpoints here — just provide the model endpoint URL and API key.
-        No Azure subscription access required.
-      </p>
-
-      <PageBanner
-        title="Getting Started with Model Endpoints"
-        description="Developers and testers can register model endpoints directly — no subscription-owner access needed. Once registered, model endpoints appear in every deployment dropdown across the framework."
-        accentColor="green"
-        steps={[
-          { label: 'Click Add Model Endpoint', detail: 'Enter your model endpoint URL, API key, and deployment name.' },
-          { label: 'Test the connection', detail: 'Click the Test button to verify the model endpoint is live and responding.' },
-          { label: 'Use everywhere', detail: 'Your model endpoint now appears in every page: A/B Testing, Evaluation, Performance, RAG, etc.' },
-        ]}
-        tips={[
-          'Supports Azure OpenAI, OpenAI direct, or any OpenAI-compatible model endpoint.',
-          'API keys are stored locally and never leave your machine.',
-          'Subscription owners can also use Azure Monitor to auto-discover deployments.',,
-        ]}
-      />
 
       {/* Registration form */}
       {showForm && (

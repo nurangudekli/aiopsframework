@@ -19,14 +19,19 @@ import {
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
   BarChart3,
   Bell,
   Calendar,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   Clock,
+  Database,
   Info,
+  Loader2,
   MessageSquare,
   Play,
   Shield,
@@ -38,6 +43,18 @@ import PageBanner from '../components/PageBanner';
 import DeploymentSelect from '../components/DeploymentSelect';
 import PromptLibraryPicker from '../components/PromptLibraryPicker';
 import GoldenDatasetPicker from '../components/GoldenDatasetPicker';
+
+/* ─── Reusable step badge ───────────────────────────────────── */
+function StepBadge({ step, title, done }: { step: number; title: string; done?: boolean }) {
+  return (
+    <div className="flex items-center gap-2 mb-3">
+      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${done ? 'bg-green-500 text-white' : 'bg-indigo-600 text-white'}`}>
+        {done ? <CheckCircle2 size={14} /> : step}
+      </div>
+      <h3 className="text-sm font-semibold text-gray-700">{title}</h3>
+    </div>
+  );
+}
 import {
   LineChart,
   Line,
@@ -273,9 +290,10 @@ function DashboardTab() {
   );
 }
 
-/* ─── New Run Tab (blog Step 3) ─────────────────────────────── */
+/* ─── New Run Tab (blog Step 3) — 3-step wizard ─────────────── */
 function NewRunTab() {
   const queryClient = useQueryClient();
+  const [step, setStep] = useState(1);
   const [name, setName] = useState('');
   const [deployment, setDeployment] = useState('');
   const [modelVersion, setModelVersion] = useState('');
@@ -325,100 +343,165 @@ function NewRunTab() {
     { query: 'What is GPT?', response: 'GPT is a language model by OpenAI.', ground_truth: 'GPT is a generative pre-trained transformer by OpenAI.' },
   ], null, 2);
 
+  const step1Done = !!name && !!deployment;
+  const step2Done = !!jsonText.trim();
+
+  const STEPS = [
+    { id: 1, title: 'Run Details', icon: Activity },
+    { id: 2, title: 'Load Dataset', icon: BarChart3 },
+    { id: 3, title: 'Evaluators & Run', icon: Play },
+  ];
+
   return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-xl border p-6">
-        <h3 className="text-sm font-semibold mb-4">Create Evaluation Run</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Run Name *</label>
-            <input className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Nightly Quality Check" value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
-          <DeploymentSelect
-            label="Deployment"
-            value={deployment}
-            onChange={setDeployment}
-            onSelectDeployment={(info) => {
-              if (info.model_version) setModelVersion(info.model_version);
-            }}
-            placeholder="Select deployment…"
-          />
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Model Version</label>
-            <input className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Auto-filled from deployment or type manually" value={modelVersion} onChange={(e) => setModelVersion(e.target.value)} />
-          </div>
-        </div>
-
-        <div className="mb-4">
-          <div className="flex justify-between items-center mb-1">
-            <p className="text-xs font-medium text-gray-500">Dataset (JSON array) *</p>
-            <div className="flex items-center gap-2">
-              <GoldenDatasetPicker label="From Golden Dataset" onLoadDatasetJson={(json) => setJsonText(json)} />
-              <button onClick={() => setJsonText(sampleData)} className="text-xs text-indigo-600 hover:underline">Load sample</button>
-            </div>
-          </div>
-          <textarea
-            className="w-full px-3 py-2 border rounded-lg text-sm font-mono"
-            rows={6}
-            placeholder='[{"query": "...", "response": "...", "ground_truth": "..."}]'
-            value={jsonText}
-            onChange={(e) => setJsonText(e.target.value)}
-          />
-        </div>
-
-        <div className="mb-4">
-          <p className="text-xs font-medium text-gray-500 mb-2">Evaluators *</p>
-          {allEvaluators.map((group) => (
-            <div key={group.group} className="mb-2">
-              <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">{group.group}</p>
-              <div className="flex flex-wrap gap-2">
-                {group.items.map((e) => (
-                  <button
-                    key={e}
-                    onClick={() => toggleEval(e)}
-                    className={`px-3 py-1 text-xs rounded-full border ${
-                      selectedEvals.includes(e) ? 'bg-indigo-100 border-indigo-400 text-indigo-700' : 'bg-gray-50 border-gray-200 text-gray-600'
-                    }`}
-                  >
-                    {e.replace(/_/g, ' ')}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <button
-          onClick={() => mut.mutate()}
-          disabled={mut.isPending || !name || !jsonText || !selectedEvals.length}
-          className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-        >
-          {mut.isPending ? 'Running evaluation…' : 'Run Evaluation Pipeline'}
-        </button>
-        {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
+    <>
+      {/* Mini stepper */}
+      <div className="flex items-center gap-2 mb-6">
+        {STEPS.map((s, idx) => {
+          const done = s.id === 1 ? step1Done : s.id === 2 ? step2Done : !!result;
+          const active = step === s.id;
+          return (
+            <React.Fragment key={s.id}>
+              <button onClick={() => setStep(s.id)} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${active ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : done ? 'border-green-200 bg-green-50 text-green-700' : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'}`}>
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${active ? 'bg-indigo-600 text-white' : done ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-500'}`}>
+                  {done && !active ? <CheckCircle2 size={12} /> : s.id}
+                </div>
+                {s.title}
+              </button>
+              {idx < STEPS.length - 1 && <ArrowRight size={14} className="text-gray-300" />}
+            </React.Fragment>
+          );
+        })}
       </div>
 
-      {result && (
+      {step === 1 && (
         <div className="bg-white rounded-xl border p-6">
-          <h3 className="text-sm font-semibold mb-3">Evaluation Results — {result.name}</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-            <SummaryCard label="Composite Quality" value={result.metrics?.composite_quality_score?.toFixed(2) ?? '—'} />
-            <SummaryCard label="Safety Violation Rate" value={result.metrics?.safety_violation_rate != null ? `${(result.metrics.safety_violation_rate * 100).toFixed(1)}%` : '—'} />
-            <SummaryCard label="Rows Evaluated" value={String(result.dataset_size)} />
-            <SummaryCard label="Alerts Triggered" value={String(result.alerts_triggered)} color={result.alerts_triggered > 0 ? 'text-red-600' : 'text-green-600'} />
+          <StepBadge step={1} title="Run Details" />
+          <p className="text-xs text-gray-500 mb-4">Name your evaluation run and select the deployment to evaluate.</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Run Name *</label>
+              <input className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Nightly Quality Check" value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <DeploymentSelect
+              label="Deployment *"
+              value={deployment}
+              onChange={setDeployment}
+              onSelectDeployment={(info) => {
+                if (info.model_version) setModelVersion(info.model_version);
+              }}
+              placeholder="Select deployment…"
+            />
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Model Version</label>
+              <input className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Auto-filled or type manually" value={modelVersion} onChange={(e) => setModelVersion(e.target.value)} />
+            </div>
           </div>
-          {result.metrics && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {Object.entries(result.metrics)
-                .filter(([k]) => k.endsWith('.mean'))
-                .map(([k, v]) => (
-                  <SummaryCard key={k} label={k.replace('.mean', '').replace(/_/g, ' ')} value={(v as number).toFixed(3)} />
-                ))}
+          <div className="flex justify-end mt-6 pt-4 border-t">
+            <button onClick={() => setStep(2)} disabled={!step1Done} className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50"><span>Next: Dataset</span><ChevronRight size={16} /></button>
+          </div>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="bg-white rounded-xl border p-6">
+          <StepBadge step={2} title="Load Dataset" />
+          <div className="p-2 mb-4 bg-indigo-50 rounded-lg border border-indigo-100 text-xs text-indigo-700 flex items-center gap-2">
+            <CheckCircle2 size={12} /> <span className="font-medium">{name}</span> → <span className="font-mono">{deployment}</span>{modelVersion ? ` (v${modelVersion})` : ''}
+            <button onClick={() => setStep(1)} className="ml-auto text-indigo-500 hover:underline text-[11px]">Edit</button>
+          </div>
+          <div className="mb-4">
+            <div className="flex justify-between items-center mb-1">
+              <p className="text-xs font-medium text-gray-500">Dataset (JSON array) *</p>
+              <div className="flex items-center gap-2">
+                <GoldenDatasetPicker label="From Golden Dataset" onLoadDatasetJson={(json) => setJsonText(json)} />
+                <button onClick={() => setJsonText(sampleData)} className="text-xs text-indigo-600 hover:underline">Load sample</button>
+              </div>
+            </div>
+            <textarea
+              className="w-full px-3 py-2 border rounded-lg text-sm font-mono"
+              rows={8}
+              placeholder='[{"query": "...", "response": "...", "ground_truth": "..."}]'
+              value={jsonText}
+              onChange={(e) => setJsonText(e.target.value)}
+            />
+            {jsonText && (() => { try { return <p className="text-[11px] text-gray-400 mt-1">{JSON.parse(jsonText).length} rows</p>; } catch { return <p className="text-[11px] text-red-400 mt-1">Invalid JSON</p>; } })()}
+          </div>
+          <div className="flex justify-between mt-6 pt-4 border-t">
+            <button onClick={() => setStep(1)} className="flex items-center gap-2 px-5 py-2.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><ChevronLeft size={16} /> Back</button>
+            <button onClick={() => setStep(3)} disabled={!step2Done} className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50"><span>Next: Evaluators</span><ChevronRight size={16} /></button>
+          </div>
+        </div>
+      )}
+
+      {step === 3 && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-xl border p-6">
+            <StepBadge step={3} title="Select Evaluators & Run" />
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+              <div className="p-2 bg-gray-50 rounded-lg border text-xs"><span className="text-gray-400 block mb-0.5">Run</span><span className="font-medium">{name}</span></div>
+              <div className="p-2 bg-gray-50 rounded-lg border text-xs"><span className="text-gray-400 block mb-0.5">Deployment</span><span className="font-mono">{deployment}</span></div>
+              <div className="p-2 bg-gray-50 rounded-lg border text-xs"><span className="text-gray-400 block mb-0.5">Dataset</span>{(() => { try { return `${JSON.parse(jsonText).length} rows`; } catch { return 'Invalid JSON'; } })()}</div>
+            </div>
+
+            <div className="mb-4">
+              <p className="text-xs font-medium text-gray-500 mb-2">Evaluators *</p>
+              {allEvaluators.map((group) => (
+                <div key={group.group} className="mb-2">
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">{group.group}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {group.items.map((e) => (
+                      <button
+                        key={e}
+                        onClick={() => toggleEval(e)}
+                        className={`px-3 py-1 text-xs rounded-full border ${
+                          selectedEvals.includes(e) ? 'bg-indigo-100 border-indigo-400 text-indigo-700' : 'bg-gray-50 border-gray-200 text-gray-600'
+                        }`}
+                      >
+                        {e.replace(/_/g, ' ')}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {error && <p className="text-sm text-red-600 flex items-center gap-1 mb-3"><AlertTriangle size={14} /> {error}</p>}
+
+            <div className="flex justify-between pt-4 border-t">
+              <button onClick={() => setStep(2)} className="flex items-center gap-2 px-5 py-2.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><ChevronLeft size={16} /> Back</button>
+              <button
+                onClick={() => mut.mutate()}
+                disabled={mut.isPending || !name || !jsonText || !selectedEvals.length}
+                className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 shadow-sm"
+              >
+                {mut.isPending ? <><Loader2 size={16} className="animate-spin" /> Running…</> : <><Play size={16} /> Run Evaluation Pipeline</>}
+              </button>
+            </div>
+          </div>
+
+          {result && (
+            <div className="bg-white rounded-xl border p-6">
+              <h3 className="text-sm font-semibold mb-3">Evaluation Results — {result.name}</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <SummaryCard label="Composite Quality" value={result.metrics?.composite_quality_score?.toFixed(2) ?? '—'} />
+                <SummaryCard label="Safety Violation Rate" value={result.metrics?.safety_violation_rate != null ? `${(result.metrics.safety_violation_rate * 100).toFixed(1)}%` : '—'} />
+                <SummaryCard label="Rows Evaluated" value={String(result.dataset_size)} />
+                <SummaryCard label="Alerts Triggered" value={String(result.alerts_triggered)} color={result.alerts_triggered > 0 ? 'text-red-600' : 'text-green-600'} />
+              </div>
+              {result.metrics && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {Object.entries(result.metrics)
+                    .filter(([k]) => k.endsWith('.mean'))
+                    .map(([k, v]) => (
+                      <SummaryCard key={k} label={k.replace('.mean', '').replace(/_/g, ' ')} value={(v as number).toFixed(3)} />
+                    ))}
+                </div>
+              )}
             </div>
           )}
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -562,8 +645,9 @@ function AlertsTab() {
   );
 }
 
-/* ─── UX Metrics Tab (blog Step 2 — helpfulness, tone, completeness) ── */
+/* ─── UX Metrics Tab (blog Step 2 — helpfulness, tone, completeness) — 2-step wizard ── */
 function UxMetricsTab() {
+  const [step, setStep] = useState(1);
   const [form, setForm] = useState({ query: '', response: '', context: '', ground_truth: '', expected_tone: 'professional' });
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['helpfulness', 'tone', 'completeness']);
   const [result, setResult] = useState<any>(null);
@@ -578,74 +662,122 @@ function UxMetricsTab() {
     onError: (e: Error) => setError(e.message),
   });
 
+  const step1Done = !!form.response.trim();
+
+  const STEPS = [
+    { id: 1, title: 'Enter Content', icon: Users },
+    { id: 2, title: 'Metrics & Run', icon: Play },
+  ];
+
   return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-xl border p-6">
-        <h3 className="text-sm font-semibold mb-1">User Experience Evaluation</h3>
-        <p className="text-xs text-gray-500 mb-3">
-          Evaluate helpfulness, tone, and completeness — the human-facing quality metrics missing from standard SDK evaluators.
-        </p>
-        <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <input className="flex-1 px-3 py-2 border rounded-lg text-sm" placeholder="Query / prompt" value={form.query} onChange={(e) => setForm({ ...form, query: e.target.value })} />
-            <PromptLibraryPicker onSelect={(s) => setForm({ ...form, query: s.content })} />
-            <GoldenDatasetPicker onSelectCase={(c) => setForm({ ...form, query: c.question, ground_truth: c.expected_answer || form.ground_truth })} />
-          </div>
-          <textarea className="w-full px-3 py-2 border rounded-lg text-sm" rows={4} placeholder="Model response *" value={form.response} onChange={(e) => setForm({ ...form, response: e.target.value })} />
-          <textarea className="w-full px-3 py-2 border rounded-lg text-sm" rows={2} placeholder="Ground truth (for completeness)" value={form.ground_truth} onChange={(e) => setForm({ ...form, ground_truth: e.target.value })} />
-
-          <div className="flex items-center gap-4">
-            <div>
-              <label className="text-xs text-gray-500">Expected Tone</label>
-              <select className="ml-2 border rounded-lg px-2 py-1 text-sm" value={form.expected_tone} onChange={(e) => setForm({ ...form, expected_tone: e.target.value })}>
-                {['professional', 'friendly', 'empathetic', 'formal', 'casual'].map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex gap-2">
-              {['helpfulness', 'tone', 'completeness'].map((m) => (
-                <button key={m} onClick={() => toggleMetric(m)} className={`px-3 py-1 text-xs rounded-full border ${
-                  selectedMetrics.includes(m) ? 'bg-indigo-100 border-indigo-400 text-indigo-700' : 'bg-gray-50 border-gray-200'
-                }`}>{m}</button>
-              ))}
-            </div>
-          </div>
-
-          <button onClick={() => mut.mutate()} disabled={mut.isPending || !form.response} className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-            {mut.isPending ? 'Evaluating…' : 'Run UX Evaluation'}
-          </button>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-        </div>
+    <>
+      {/* Mini stepper */}
+      <div className="flex items-center gap-2 mb-6">
+        {STEPS.map((s, idx) => {
+          const done = s.id === 1 ? step1Done : !!result;
+          const active = step === s.id;
+          return (
+            <React.Fragment key={s.id}>
+              <button onClick={() => setStep(s.id)} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${active ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : done ? 'border-green-200 bg-green-50 text-green-700' : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'}`}>
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${active ? 'bg-indigo-600 text-white' : done ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-500'}`}>
+                  {done && !active ? <CheckCircle2 size={12} /> : s.id}
+                </div>
+                {s.title}
+              </button>
+              {idx < STEPS.length - 1 && <ArrowRight size={14} className="text-gray-300" />}
+            </React.Fragment>
+          );
+        })}
       </div>
 
-      {result && (
+      {step === 1 && (
         <div className="bg-white rounded-xl border p-6">
-          <h3 className="text-sm font-semibold mb-3">UX Evaluation Results</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {Object.entries(result).map(([name, val]: [string, any]) => (
-              <div key={name} className="bg-gray-50 rounded-lg p-4">
-                <p className="text-xs text-gray-500 mb-1 capitalize">{name}</p>
-                <p className={`text-lg font-bold ${val.score >= 4 ? 'text-green-600' : val.score >= 3 ? 'text-yellow-600' : 'text-red-600'}`}>
-                  {val.score?.toFixed(2)}/5
-                </p>
-                {val.reasoning && <p className="text-xs text-gray-500 mt-1">{val.reasoning}</p>}
-                <p className="text-[10px] text-gray-400 mt-1">Method: {val.method}</p>
-              </div>
-            ))}
+          <StepBadge step={1} title="Enter Content for UX Evaluation" />
+          <p className="text-xs text-gray-500 mb-3">
+            Evaluate helpfulness, tone, and completeness — the human-facing quality metrics missing from standard SDK evaluators.
+          </p>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <input className="flex-1 px-3 py-2 border rounded-lg text-sm" placeholder="Query / prompt" value={form.query} onChange={(e) => setForm({ ...form, query: e.target.value })} />
+              <PromptLibraryPicker onSelect={(s) => setForm({ ...form, query: s.content })} />
+              <GoldenDatasetPicker onSelectCase={(c) => setForm({ ...form, query: c.question, ground_truth: c.expected_answer || form.ground_truth })} />
+            </div>
+            <textarea className="w-full px-3 py-2 border rounded-lg text-sm" rows={4} placeholder="Model response *" value={form.response} onChange={(e) => setForm({ ...form, response: e.target.value })} />
+            <textarea className="w-full px-3 py-2 border rounded-lg text-sm" rows={2} placeholder="Ground truth (for completeness)" value={form.ground_truth} onChange={(e) => setForm({ ...form, ground_truth: e.target.value })} />
+          </div>
+          <div className="flex justify-end mt-6 pt-4 border-t">
+            <button onClick={() => setStep(2)} disabled={!step1Done} className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50"><span>Next: Metrics</span><ChevronRight size={16} /></button>
           </div>
         </div>
       )}
-    </div>
+
+      {step === 2 && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-xl border p-6">
+            <StepBadge step={2} title="Select UX Metrics & Run" />
+            <div className="p-2 mb-4 bg-indigo-50 rounded-lg border border-indigo-100 text-xs text-indigo-700 flex items-center gap-2">
+              <CheckCircle2 size={12} /> Response ({form.response.length} chars){form.query ? ` · Query: "${form.query.slice(0, 50)}…"` : ''}
+              <button onClick={() => setStep(1)} className="ml-auto text-indigo-500 hover:underline text-[11px]">Edit</button>
+            </div>
+
+            <div className="flex items-center gap-4 mb-4">
+              <div>
+                <label className="text-xs text-gray-500">Expected Tone</label>
+                <select className="ml-2 border rounded-lg px-2 py-1 text-sm" value={form.expected_tone} onChange={(e) => setForm({ ...form, expected_tone: e.target.value })}>
+                  {['professional', 'friendly', 'empathetic', 'formal', 'casual'].map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-2">
+                {['helpfulness', 'tone', 'completeness'].map((m) => (
+                  <button key={m} onClick={() => toggleMetric(m)} className={`px-3 py-1 text-xs rounded-full border ${
+                    selectedMetrics.includes(m) ? 'bg-indigo-100 border-indigo-400 text-indigo-700' : 'bg-gray-50 border-gray-200'
+                  }`}>{m}</button>
+                ))}
+              </div>
+            </div>
+
+            {error && <p className="text-sm text-red-600 flex items-center gap-1 mb-3"><AlertTriangle size={14} /> {error}</p>}
+
+            <div className="flex justify-between pt-4 border-t">
+              <button onClick={() => setStep(1)} className="flex items-center gap-2 px-5 py-2.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><ChevronLeft size={16} /> Back</button>
+              <button onClick={() => mut.mutate()} disabled={mut.isPending || !form.response} className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 shadow-sm">
+                {mut.isPending ? <><Loader2 size={16} className="animate-spin" /> Evaluating…</> : <><Play size={16} /> Run UX Evaluation</>}
+              </button>
+            </div>
+          </div>
+
+          {result && (
+            <div className="bg-white rounded-xl border p-6">
+              <h3 className="text-sm font-semibold mb-3">UX Evaluation Results</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {Object.entries(result).map(([name, val]: [string, any]) => (
+                  <div key={name} className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs text-gray-500 mb-1 capitalize">{name}</p>
+                    <p className={`text-lg font-bold ${val.score >= 4 ? 'text-green-600' : val.score >= 3 ? 'text-yellow-600' : 'text-red-600'}`}>
+                      {val.score?.toFixed(2)}/5
+                    </p>
+                    {val.reasoning && <p className="text-xs text-gray-500 mt-1">{val.reasoning}</p>}
+                    <p className="text-[10px] text-gray-400 mt-1">Method: {val.method}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </>
   );
 }
 
-/* ─── Schedule Tab (blog Step 5 — MLOps) ────────────────────── */
+/* ─── Schedule Tab (blog Step 5 — MLOps) — 2-step wizard ───── */
 function ScheduleTab() {
   const queryClient = useQueryClient();
   const { data: schedules = [] } = useQuery({ queryKey: ['eval-schedules'], queryFn: listEvalSchedules });
   const { data: datasets = [] } = useQuery({ queryKey: ['golden-datasets'], queryFn: listGoldenDatasets });
 
+  const [step, setStep] = useState(1);
   const [form, setForm] = useState({
     name: '', deployment: '', golden_dataset_id: '', trigger: 'manual', cron_expression: '',
     evaluators: ['coherence', 'fluency', 'relevance', 'groundedness'],
@@ -656,6 +788,7 @@ function ScheduleTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['eval-schedules'] });
       setForm({ ...form, name: '' });
+      setStep(1);
     },
   });
   const deleteMut = useMutation({
@@ -663,45 +796,102 @@ function ScheduleTab() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['eval-schedules'] }),
   });
 
+  const step1Done = !!form.name && !!form.deployment;
+  const allEvaluators = ['coherence', 'fluency', 'relevance', 'groundedness', 'similarity', 'retrieval', 'f1_score', 'bleu_score', 'rouge_score', 'violence', 'sexual', 'hate_unfairness', 'self_harm', 'helpfulness', 'tone', 'completeness'];
+  const toggleEval = (e: string) => setForm(prev => ({ ...prev, evaluators: prev.evaluators.includes(e) ? prev.evaluators.filter(x => x !== e) : [...prev.evaluators, e] }));
+
+  const STEPS = [
+    { id: 1, title: 'Schedule Details', icon: Calendar },
+    { id: 2, title: 'Evaluators & Create', icon: Play },
+  ];
+
   return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-xl border p-6">
-        <h3 className="text-sm font-semibold mb-4">Create Evaluation Schedule</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Schedule Name</label>
-            <input className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Nightly Quality Check" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          </div>
-          <DeploymentSelect label="Deployment" value={form.deployment} onChange={(v) => setForm({ ...form, deployment: v })} placeholder="Select deployment…" />
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Golden Dataset</label>
-            <select className="w-full px-3 py-2 border rounded-lg text-sm" value={form.golden_dataset_id} onChange={(e) => setForm({ ...form, golden_dataset_id: e.target.value })}>
-              <option value="">Select dataset…</option>
-              {datasets.map((ds: any) => <option key={ds.id} value={ds.id}>{ds.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Trigger</label>
-            <select className="w-full px-3 py-2 border rounded-lg text-sm" value={form.trigger} onChange={(e) => setForm({ ...form, trigger: e.target.value })}>
-              <option value="manual">Manual</option>
-              <option value="on_deployment">On Model Deployment</option>
-              <option value="cron">Scheduled (Cron)</option>
-            </select>
-          </div>
-          {form.trigger === 'cron' && (
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Cron Expression</label>
-              <input className="w-full px-3 py-2 border rounded-lg text-sm font-mono" placeholder="0 */6 * * *" value={form.cron_expression} onChange={(e) => setForm({ ...form, cron_expression: e.target.value })} />
-            </div>
-          )}
-        </div>
-        <button onClick={() => createMut.mutate()} disabled={!form.name || !form.deployment} className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-          Create Schedule
-        </button>
+    <>
+      {/* Mini stepper */}
+      <div className="flex items-center gap-2 mb-6">
+        {STEPS.map((s, idx) => {
+          const done = s.id === 1 ? step1Done : false;
+          const active = step === s.id;
+          return (
+            <React.Fragment key={s.id}>
+              <button onClick={() => setStep(s.id)} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${active ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : done ? 'border-green-200 bg-green-50 text-green-700' : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'}`}>
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${active ? 'bg-indigo-600 text-white' : done ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-500'}`}>
+                  {done && !active ? <CheckCircle2 size={12} /> : s.id}
+                </div>
+                {s.title}
+              </button>
+              {idx < STEPS.length - 1 && <ArrowRight size={14} className="text-gray-300" />}
+            </React.Fragment>
+          );
+        })}
       </div>
 
+      {step === 1 && (
+        <div className="bg-white rounded-xl border p-6">
+          <StepBadge step={1} title="Schedule Details" />
+          <p className="text-xs text-gray-500 mb-4">Name your schedule, select the deployment and trigger type.</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Schedule Name *</label>
+              <input className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Nightly Quality Check" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </div>
+            <DeploymentSelect label="Deployment *" value={form.deployment} onChange={(v) => setForm({ ...form, deployment: v })} placeholder="Select deployment…" />
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Golden Dataset</label>
+              <select className="w-full px-3 py-2 border rounded-lg text-sm" value={form.golden_dataset_id} onChange={(e) => setForm({ ...form, golden_dataset_id: e.target.value })}>
+                <option value="">Select dataset…</option>
+                {datasets.map((ds: any) => <option key={ds.id} value={ds.id}>{ds.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Trigger</label>
+              <select className="w-full px-3 py-2 border rounded-lg text-sm" value={form.trigger} onChange={(e) => setForm({ ...form, trigger: e.target.value })}>
+                <option value="manual">Manual</option>
+                <option value="on_deployment">On Model Deployment</option>
+                <option value="cron">Scheduled (Cron)</option>
+              </select>
+            </div>
+            {form.trigger === 'cron' && (
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-gray-500 mb-1">Cron Expression</label>
+                <input className="w-full px-3 py-2 border rounded-lg text-sm font-mono" placeholder="0 */6 * * *" value={form.cron_expression} onChange={(e) => setForm({ ...form, cron_expression: e.target.value })} />
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end mt-6 pt-4 border-t">
+            <button onClick={() => setStep(2)} disabled={!step1Done} className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50"><span>Next: Evaluators</span><ChevronRight size={16} /></button>
+          </div>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="bg-white rounded-xl border p-6">
+          <StepBadge step={2} title="Select Evaluators & Create" />
+          <div className="p-2 mb-4 bg-indigo-50 rounded-lg border border-indigo-100 text-xs text-indigo-700 flex items-center gap-2">
+            <CheckCircle2 size={12} /> <span className="font-medium">{form.name}</span> → <span className="font-mono">{form.deployment}</span> · Trigger: {form.trigger}
+            <button onClick={() => setStep(1)} className="ml-auto text-indigo-500 hover:underline text-[11px]">Edit</button>
+          </div>
+          <div className="mb-4">
+            <p className="text-xs font-medium text-gray-500 mb-2">Evaluators *</p>
+            <div className="flex flex-wrap gap-2">
+              {allEvaluators.map((e) => (
+                <button key={e} onClick={() => toggleEval(e)} className={`px-3 py-1 text-xs rounded-full border ${form.evaluators.includes(e) ? 'bg-indigo-100 border-indigo-400 text-indigo-700' : 'bg-gray-50 border-gray-200 text-gray-600'}`}>
+                  {e.replace(/_/g, ' ')}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex justify-between pt-4 border-t">
+            <button onClick={() => setStep(1)} className="flex items-center gap-2 px-5 py-2.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><ChevronLeft size={16} /> Back</button>
+            <button onClick={() => createMut.mutate()} disabled={!form.name || !form.deployment || createMut.isPending} className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 shadow-sm">
+              {createMut.isPending ? <><Loader2 size={16} className="animate-spin" /> Creating…</> : <><Play size={16} /> Create Schedule</>}
+            </button>
+          </div>
+        </div>
+      )}
+
       {schedules.length > 0 && (
-        <div className="bg-white rounded-xl border">
+        <div className="bg-white rounded-xl border mt-6">
           <div className="px-6 py-3 border-b"><h3 className="font-semibold text-sm">Active Schedules</h3></div>
           <div className="divide-y">
             {schedules.map((s: any) => (
@@ -721,11 +911,11 @@ function ScheduleTab() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
-/* ─── Human Review Tab (blog Step 6) ────────────────────────── */
+/* ─── Human Review Tab (blog Step 6) — 2-step wizard ────────── */
 function HumanReviewTab() {
   const queryClient = useQueryClient();
   const { data: runs = [] } = useQuery({ queryKey: ['continuous-eval-runs'], queryFn: () => listContinuousEvalRuns() });
@@ -736,6 +926,7 @@ function HumanReviewTab() {
     enabled: true,
   });
 
+  const [step, setStep] = useState(1);
   const [form, setForm] = useState({ run_id: '', row_index: 0, reviewer: '', rating: 3, feedback: '', flags: [] as string[] });
   const [error, setError] = useState('');
 
@@ -753,61 +944,106 @@ function HumanReviewTab() {
     onError: (e: Error) => setError(e.message),
   });
 
+  const step1Done = !!form.run_id && !!form.reviewer;
+
+  const STEPS = [
+    { id: 1, title: 'Select Run', icon: MessageSquare },
+    { id: 2, title: 'Rate & Flag', icon: Play },
+  ];
+
   return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-xl border p-6">
-        <h3 className="text-sm font-semibold mb-1">Submit Human Review</h3>
-        <p className="text-xs text-gray-500 mb-4">Review and flag AI responses from evaluation runs for quality improvement.</p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Evaluation Run</label>
-            <select className="w-full px-3 py-2 border rounded-lg text-sm" value={form.run_id} onChange={(e) => { setForm({ ...form, run_id: e.target.value }); setSelectedRunId(e.target.value); }}>
-              <option value="">Select run…</option>
-              {runs.map((r: any) => <option key={r.id} value={r.id}>{r.name} ({r.id})</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Row Index</label>
-            <input type="number" min={0} className="w-full px-3 py-2 border rounded-lg text-sm" value={form.row_index} onChange={(e) => setForm({ ...form, row_index: +e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Reviewer</label>
-            <input className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Your name" value={form.reviewer} onChange={(e) => setForm({ ...form, reviewer: e.target.value })} />
-          </div>
-        </div>
-
-        <div className="mb-4">
-          <label className="block text-xs font-medium text-gray-500 mb-1">Rating (1-5)</label>
-          <div className="flex gap-2">
-            {[1, 2, 3, 4, 5].map((n) => (
-              <button key={n} onClick={() => setForm({ ...form, rating: n })} className={`w-10 h-10 rounded-lg border text-sm font-bold ${form.rating === n ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-gray-50 text-gray-600'}`}>
-                {n}
+    <>
+      {/* Mini stepper */}
+      <div className="flex items-center gap-2 mb-6">
+        {STEPS.map((s, idx) => {
+          const done = s.id === 1 ? step1Done : false;
+          const active = step === s.id;
+          return (
+            <React.Fragment key={s.id}>
+              <button onClick={() => setStep(s.id)} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${active ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : done ? 'border-green-200 bg-green-50 text-green-700' : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'}`}>
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${active ? 'bg-indigo-600 text-white' : done ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-500'}`}>
+                  {done && !active ? <CheckCircle2 size={12} /> : s.id}
+                </div>
+                {s.title}
               </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="mb-4">
-          <label className="block text-xs font-medium text-gray-500 mb-1">Flags</label>
-          <div className="flex flex-wrap gap-2">
-            {allFlags.map((f) => (
-              <button key={f} onClick={() => toggleFlag(f)} className={`px-3 py-1 text-xs rounded-full border ${
-                form.flags.includes(f) ? 'bg-red-100 border-red-400 text-red-700' : 'bg-gray-50 border-gray-200'
-              }`}>{f.replace(/_/g, ' ')}</button>
-            ))}
-          </div>
-        </div>
-
-        <textarea className="w-full px-3 py-2 border rounded-lg text-sm mb-4" rows={3} placeholder="Feedback / notes" value={form.feedback} onChange={(e) => setForm({ ...form, feedback: e.target.value })} />
-
-        <button onClick={() => submitMut.mutate()} disabled={!form.run_id || submitMut.isPending} className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-          {submitMut.isPending ? 'Submitting…' : 'Submit Review'}
-        </button>
-        {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
+              {idx < STEPS.length - 1 && <ArrowRight size={14} className="text-gray-300" />}
+            </React.Fragment>
+          );
+        })}
       </div>
 
+      {step === 1 && (
+        <div className="bg-white rounded-xl border p-6">
+          <StepBadge step={1} title="Select Evaluation Run & Reviewer" />
+          <p className="text-xs text-gray-500 mb-4">Choose the evaluation run to review and identify yourself as the reviewer.</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Evaluation Run *</label>
+              <select className="w-full px-3 py-2 border rounded-lg text-sm" value={form.run_id} onChange={(e) => { setForm({ ...form, run_id: e.target.value }); setSelectedRunId(e.target.value); }}>
+                <option value="">Select run…</option>
+                {runs.map((r: any) => <option key={r.id} value={r.id}>{r.name} ({r.id})</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Row Index</label>
+              <input type="number" min={0} className="w-full px-3 py-2 border rounded-lg text-sm" value={form.row_index} onChange={(e) => setForm({ ...form, row_index: +e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Reviewer *</label>
+              <input className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Your name" value={form.reviewer} onChange={(e) => setForm({ ...form, reviewer: e.target.value })} />
+            </div>
+          </div>
+          <div className="flex justify-end mt-6 pt-4 border-t">
+            <button onClick={() => setStep(2)} disabled={!step1Done} className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50"><span>Next: Rate & Flag</span><ChevronRight size={16} /></button>
+          </div>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="bg-white rounded-xl border p-6">
+          <StepBadge step={2} title="Rate & Flag" />
+          <div className="p-2 mb-4 bg-indigo-50 rounded-lg border border-indigo-100 text-xs text-indigo-700 flex items-center gap-2">
+            <CheckCircle2 size={12} /> Run: <span className="font-mono">{form.run_id.slice(0, 12)}</span> · Row #{form.row_index} · Reviewer: {form.reviewer}
+            <button onClick={() => setStep(1)} className="ml-auto text-indigo-500 hover:underline text-[11px]">Edit</button>
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Rating (1-5)</label>
+            <div className="flex gap-2">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button key={n} onClick={() => setForm({ ...form, rating: n })} className={`w-10 h-10 rounded-lg border text-sm font-bold ${form.rating === n ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-gray-50 text-gray-600'}`}>
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Flags</label>
+            <div className="flex flex-wrap gap-2">
+              {allFlags.map((f) => (
+                <button key={f} onClick={() => toggleFlag(f)} className={`px-3 py-1 text-xs rounded-full border ${
+                  form.flags.includes(f) ? 'bg-red-100 border-red-400 text-red-700' : 'bg-gray-50 border-gray-200'
+                }`}>{f.replace(/_/g, ' ')}</button>
+              ))}
+            </div>
+          </div>
+
+          <textarea className="w-full px-3 py-2 border rounded-lg text-sm mb-4" rows={3} placeholder="Feedback / notes" value={form.feedback} onChange={(e) => setForm({ ...form, feedback: e.target.value })} />
+
+          {error && <p className="text-sm text-red-600 flex items-center gap-1 mb-3"><AlertTriangle size={14} /> {error}</p>}
+
+          <div className="flex justify-between pt-4 border-t">
+            <button onClick={() => setStep(1)} className="flex items-center gap-2 px-5 py-2.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><ChevronLeft size={16} /> Back</button>
+            <button onClick={() => submitMut.mutate()} disabled={!form.run_id || submitMut.isPending} className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 shadow-sm">
+              {submitMut.isPending ? <><Loader2 size={16} className="animate-spin" /> Submitting…</> : <><Play size={16} /> Submit Review</>}
+            </button>
+          </div>
+        </div>
+      )}
+
       {reviews.length > 0 && (
-        <div className="bg-white rounded-xl border">
+        <div className="bg-white rounded-xl border mt-6">
           <div className="px-6 py-3 border-b"><h3 className="font-semibold text-sm">Recent Reviews</h3></div>
           <div className="divide-y">
             {reviews.map((r: any) => (
@@ -838,7 +1074,7 @@ function HumanReviewTab() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 

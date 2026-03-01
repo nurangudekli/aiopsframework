@@ -8,11 +8,14 @@ Includes Prometheus metrics, JWT auth middleware, and Foundry evaluation.
 from __future__ import annotations
 
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
 from backend.config import settings
@@ -36,6 +39,7 @@ from backend.api.foundry_evaluation import router as foundry_eval_router
 from backend.api.continuous_evaluation import router as continuous_eval_router
 from backend.api.endpoint_registry import router as endpoint_registry_router
 from backend.api.auth import router as auth_router
+from backend.api.data_sources import router as data_sources_router
 
 # ── Prometheus metrics ──────────────────────────────────────────
 REQUEST_COUNT = Counter(
@@ -114,6 +118,7 @@ app.include_router(foundry_eval_router, prefix="/api")
 app.include_router(continuous_eval_router, prefix="/api")
 app.include_router(endpoint_registry_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
+app.include_router(data_sources_router, prefix="/api")
 
 
 # ── Prometheus middleware ───────────────────────────────────────
@@ -176,3 +181,23 @@ async def root():
             "Prometheus Metrics": "/metrics",
         },
     }
+
+
+# ── Serve frontend SPA in production ──────────────────────────
+# When the built frontend exists at /app/static (Docker production image),
+# serve it and fall back to index.html for SPA client-side routing.
+_STATIC_DIR = Path(os.environ.get("STATIC_DIR", "/app/static"))
+
+if _STATIC_DIR.is_dir() and (_STATIC_DIR / "index.html").exists():
+    from fastapi.responses import FileResponse
+
+    # Serve static assets (JS, CSS, images)
+    app.mount("/assets", StaticFiles(directory=_STATIC_DIR / "assets"), name="assets")
+
+    # SPA catch-all: any non-API, non-file route returns index.html
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str):
+        file_path = _STATIC_DIR / full_path
+        if full_path and file_path.is_file():
+            return FileResponse(file_path)
+        return FileResponse(_STATIC_DIR / "index.html")

@@ -13,17 +13,19 @@ import {
   Brain,
   Key,
   Info,
+  Settings,
+  FileBarChart,
 } from 'lucide-react';
 
 const navItems = [
   { to: '/', label: 'Home', icon: Home },
-  { to: '/model-endpoints', label: 'Model Endpoints', icon: Key },
+  { to: '/configuration', label: 'Configuration', icon: Settings },
   { to: '/testing', label: 'Testing', icon: FlaskConical },
-  { to: '/prompts', label: 'Prompts', icon: MessageSquare },
   { to: '/evaluation', label: 'Evaluation', icon: BarChart3 },
   { to: '/migration', label: 'Migration', icon: ArrowRightLeft },
   { to: '/rag', label: 'RAG Pipeline', icon: FileText },
   { to: '/monitoring', label: 'Monitoring', icon: Gauge },
+  { to: '/reports', label: 'Reports', icon: FileBarChart },
   { to: '/about', label: 'About', icon: Info },
 ];
 

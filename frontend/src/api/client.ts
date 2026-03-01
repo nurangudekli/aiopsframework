@@ -31,6 +31,9 @@ import type {
   ParameterDiffRequest,
   RAGIngestResult,
   RAGQueryResult,
+  DataSourceResult,
+  FieldMappingPreview,
+  DataSourceImportResult,
   FoundryEvalResult,
   FoundryNlpResult,
   FoundryContentSafetyResult,
@@ -263,11 +266,26 @@ export const getCanaryStages = () =>
 export const ingestRAGDocuments = (documents: Array<{ id: string; text: string; metadata?: Record<string, unknown> }>, chunkSize = 512, chunkOverlap = 64) =>
   api.post<RAGIngestResult>('/rag/ingest', { documents, chunk_size: chunkSize, chunk_overlap: chunkOverlap }).then((r) => r.data);
 
-export const queryRAG = (question: string, provider = 'azure_openai', deployment = '', topK = 5, systemMessage?: string) =>
-  api.post<RAGQueryResult>('/rag/query', { question, provider, deployment, top_k: topK, system_message: systemMessage }).then((r) => r.data);
+export const queryRAG = (question: string, provider = 'azure_openai', deployment = '', topK = 5, systemMessage?: string, temperature?: number, maxTokens?: number) =>
+  api.post<RAGQueryResult>('/rag/query', { question, provider, deployment, top_k: topK, system_message: systemMessage, temperature, max_tokens: maxTokens }).then((r) => r.data);
 
 export const clearRAGStore = () =>
   api.delete('/rag/store').then((r) => r.data);
+
+export const uploadRAGFile = (file: File, docId?: string, chunkSize = 512, chunkOverlap = 64) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('doc_id', docId || '');
+  formData.append('chunk_size', String(chunkSize));
+  formData.append('chunk_overlap', String(chunkOverlap));
+  return api.post('/rag/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data);
+};
+
+export const scrapeRAGUrl = (url: string, docId?: string, chunkSize = 512, chunkOverlap = 64) =>
+  api.post('/rag/scrape', { url, doc_id: docId, chunk_size: chunkSize, chunk_overlap: chunkOverlap }).then((r) => r.data);
+
+export const getRAGStats = () =>
+  api.get('/rag/stats').then((r) => r.data);
 
 // ── Foundry Evaluation ───
 export const getFoundrySdkStatus = () =>
@@ -389,3 +407,40 @@ export const runUxEvaluation = (data: {
   api.post('/continuous-eval/ux-evaluate', data).then((r) => r.data);
 
 export default api;
+
+// ── Data Sources ───
+export const fetchLogAnalytics = (data: { workspace_id: string; query: string; timespan?: string }) =>
+  api.post<DataSourceResult>('/data-sources/log-analytics', data).then((r) => r.data);
+
+export const fetchCosmosDB = (data: {
+  endpoint: string; database_name: string; container_name: string;
+  query?: string; key?: string; max_items?: number;
+}) =>
+  api.post<DataSourceResult>('/data-sources/cosmos-db', data).then((r) => r.data);
+
+export const fetchBlobStorage = (data: {
+  account_url: string; container_name: string; blob_name: string;
+  connection_string?: string;
+}) =>
+  api.post<DataSourceResult>('/data-sources/blob-storage', data).then((r) => r.data);
+
+export const fetchHttpSource = (data: {
+  url: string; method?: string; headers?: Record<string, string>;
+  body?: Record<string, unknown>; jmespath_expr?: string;
+}) =>
+  api.post<DataSourceResult>('/data-sources/http', data).then((r) => r.data);
+
+export const previewFieldMapping = (records: Record<string, unknown>[]) =>
+  api.post<FieldMappingPreview>('/data-sources/preview', { records }).then((r) => r.data);
+
+export const importToGolden = (data: {
+  records: Record<string, unknown>[]; dataset_name: string;
+  description?: string; source_type?: string; mapping?: Record<string, string>;
+}) =>
+  api.post<DataSourceImportResult>('/data-sources/to-golden', data).then((r) => r.data);
+
+export const importToRAG = (data: {
+  records: Record<string, unknown>[]; id_field?: string; text_field?: string;
+  chunk_size?: number; chunk_overlap?: number;
+}) =>
+  api.post<DataSourceImportResult>('/data-sources/to-rag', data).then((r) => r.data);

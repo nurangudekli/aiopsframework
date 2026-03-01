@@ -1,0 +1,112 @@
+# ─────────────────────────────────────────────────────────────
+# Deploy to Azure App Service
+#
+# Triggers on push to main branch.
+# Builds a Docker image, pushes to Azure Container Registry (ACR),
+# and deploys to Azure App Service (Web App for Containers).
+#
+# Required GitHub Secrets:
+#   AZURE_CREDENTIALS              - Service principal JSON (az ad sp create-for-rbac)
+#   ACR_LOGIN_SERVER               - e.g. genaiopsacr5777.azurecr.io
+#   ACR_USERNAME                   - ACR admin username
+#   ACR_PASSWORD                   - ACR admin password
+#   AZURE_WEBAPP_NAME              - App Service name (genaiops-framework)
+#   AZURE_RESOURCE_GROUP           - Resource group (rg-test-env-001)
+#   AZURE_OPENAI_API_KEY           - (optional) Azure OpenAI API key
+#   AZURE_OPENAI_ENDPOINT          - (optional) Azure OpenAI endpoint URL
+#   AZURE_OPENAI_DEPLOYMENT_NAME   - (optional) Azure OpenAI deployment name
+#   AZURE_OPENAI_API_VERSION       - (optional) e.g. 2024-06-01
+# ─────────────────────────────────────────────────────────────
+
+name: Deploy to Azure App Service
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: genaiops-framework
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout ───────────────────────────────────
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── 2. Login to Azure ─────────────────────────────
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # ── 3. Login to ACR ───────────────────────────────
+      - name: Login to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      # ── 4. Build & push Docker image ──────────────────
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          target: production
+          tags: |
+            ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:latest
+
+      # ── 5. Deploy to App Service ──────────────────────
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
+          images: ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+
+      # ── 6. Configure App Settings ─────────────────────
+      - name: Set App Settings
+        uses: azure/cli@v2
+        with:
+          inlineScript: |
+            az webapp config appsettings set \
+              --name ${{ secrets.AZURE_WEBAPP_NAME }} \
+              --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+              --settings \
+                APP_ENV=production \
+                APP_DEBUG=false \
+                WEBSITES_PORT=8000 \
+                WEBSITES_CONTAINER_START_TIME_LIMIT=300 \
+                CORS_ORIGINS="https://${{ secrets.AZURE_WEBAPP_NAME }}.azurewebsites.net,http://localhost:5173,http://localhost:3000" \
+                AZURE_OPENAI_API_KEY="${{ secrets.AZURE_OPENAI_API_KEY }}" \
+                AZURE_OPENAI_ENDPOINT="${{ secrets.AZURE_OPENAI_ENDPOINT }}" \
+                AZURE_OPENAI_DEPLOYMENT_NAME="${{ secrets.AZURE_OPENAI_DEPLOYMENT_NAME }}" \
+                AZURE_OPENAI_API_VERSION="${{ secrets.AZURE_OPENAI_API_VERSION }}"
+
+      # ── 7. Verify deployment ──────────────────────────
+      - name: Health check
+        run: |
+          echo "Waiting for deployment to stabilize..."
+          sleep 60
+          WEBAPP_URL="https://${{ secrets.AZURE_WEBAPP_NAME }}.azurewebsites.net"
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$WEBAPP_URL/health" || echo "000")
+            echo "Attempt $i: Health check status: $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Deployment healthy!"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "⚠️  Health check did not return 200 — app may still be starting."
+
+      - name: Azure Logout
+        if: always()
+        run: az logout

@@ -11,12 +11,15 @@ import MigrationHubPage from './pages/MigrationHubPage';
 import RAGPipelinePage from './pages/RAGPipelinePage';
 import MonitoringPage from './pages/MonitoringPage';
 import AboutPage from './pages/AboutPage';
+import ConfigurationPage from './pages/ConfigurationPage';
+import ReportsPage from './pages/ReportsPage';
 
 export default function App() {
   return (
     <Layout>
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/configuration" element={<ConfigurationPage />} />
         <Route path="/model-endpoints" element={<EndpointsPage />} />
         <Route path="/testing" element={<TestingPage />} />
         <Route path="/testing/:id" element={<ExperimentDetailPage />} />
@@ -25,6 +28,7 @@ export default function App() {
         <Route path="/migration" element={<MigrationHubPage />} />
         <Route path="/rag" element={<RAGPipelinePage />} />
         <Route path="/monitoring" element={<MonitoringPage />} />
+        <Route path="/reports" element={<ReportsPage />} />
         <Route path="/about" element={<AboutPage />} />
       </Routes>
     </Layout>

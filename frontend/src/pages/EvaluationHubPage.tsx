@@ -1,13 +1,11 @@
 import React from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { BarChart3, Database, Activity } from 'lucide-react';
+import { BarChart3, Activity } from 'lucide-react';
 import EvaluationPage from './EvaluationPage';
-import GoldenDatasetPage from './GoldenDatasetPage';
 import ContinuousEvaluationPage from './ContinuousEvaluationPage';
 
 const sections = [
   { id: 'engine', label: 'Evaluation Engine', icon: BarChart3 },
-  { id: 'datasets', label: 'Golden Datasets', icon: Database },
   { id: 'continuous', label: 'Continuous Eval', icon: Activity },
 ] as const;
 
@@ -34,7 +32,6 @@ export default function EvaluationHubPage() {
       </div>
 
       {active === 'engine' && <EvaluationPage />}
-      {active === 'datasets' && <GoldenDatasetPage />}
       {active === 'continuous' && <ContinuousEvaluationPage />}
     </div>
   );
