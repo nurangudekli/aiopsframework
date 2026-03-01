@@ -17,11 +17,9 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.database import get_db
 from backend.schemas.golden_dataset import GoldenDatasetCreate, GoldenTestCaseInput
 from backend.services.data_sources import (
     DataSourceType,
@@ -192,7 +190,7 @@ async def preview_mapping(payload: FieldMappingPreview):
 
 
 @router.post("/to-golden")
-async def convert_to_golden(payload: ToGoldenRequest, db: AsyncSession = Depends(get_db)):
+async def convert_to_golden(payload: ToGoldenRequest):
     """Convert fetched records into a golden dataset and persist it."""
     cases_raw = records_to_golden_cases(payload.records, payload.mapping)
     if not cases_raw:
@@ -205,11 +203,11 @@ async def convert_to_golden(payload: ToGoldenRequest, db: AsyncSession = Depends
         tags={"source": payload.source_type},
         cases=cases,
     )
-    dataset = await create_golden_dataset(db, ds_payload)
+    dataset = await create_golden_dataset(ds_payload)
     return {
         "status": "ok",
-        "dataset_id": dataset.id,
-        "dataset_name": dataset.name,
+        "dataset_id": dataset.get("id"),
+        "dataset_name": dataset.get("name"),
         "cases_imported": len(cases),
         "cases_skipped": len(payload.records) - len(cases),
     }

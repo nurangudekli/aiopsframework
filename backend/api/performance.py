@@ -7,10 +7,8 @@ GET  /performance/runs  → list past performance test runs
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter
 
-from backend.database import get_db
 from backend.schemas.evaluation import PerformanceTestRequest, PerformanceTestResult
 from backend.services.performance import run_performance_test, list_performance_runs
 
@@ -18,10 +16,7 @@ router = APIRouter(prefix="/performance", tags=["Performance Testing"])
 
 
 @router.post("/test", response_model=PerformanceTestResult)
-async def stress_test(
-    payload: PerformanceTestRequest,
-    db: AsyncSession = Depends(get_db),
-):
+async def stress_test(payload: PerformanceTestRequest):
     """
     Run a stress / performance test against the specified model.
 
@@ -29,11 +24,11 @@ async def stress_test(
     latency percentiles, throughput, and error rates.
     Results are persisted to the database.
     """
-    result = await run_performance_test(payload, db=db)
+    result = await run_performance_test(payload)
     return result
 
 
 @router.get("/runs")
-async def list_runs(limit: int = 20, db: AsyncSession = Depends(get_db)):
+async def list_runs(limit: int = 20):
     """List recent performance test runs."""
-    return await list_performance_runs(db, limit=limit)
+    return await list_performance_runs(limit=limit)

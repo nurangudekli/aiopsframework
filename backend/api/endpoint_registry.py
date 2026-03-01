@@ -98,7 +98,7 @@ def _to_out(ep) -> EndpointOut:
 @router.post("", response_model=EndpointOut, summary="Register model endpoint")
 async def register_endpoint(req: EndpointCreate):
     """Register a new model endpoint with URL + API key."""
-    ep = registry.register(
+    ep = await registry.register(
         name=req.name,
         provider=req.provider,
         endpoint_url=req.endpoint_url,
@@ -115,18 +115,18 @@ async def register_endpoint(req: EndpointCreate):
 @router.get("", response_model=List[EndpointOut], summary="List model endpoints")
 async def list_endpoints(active_only: bool = True):
     """List all registered model endpoints (optionally including inactive ones)."""
-    return [_to_out(ep) for ep in registry.list_all(active_only=active_only)]
+    return [_to_out(ep) for ep in await registry.list_all(active_only=active_only)]
 
 
 @router.get("/deployments", summary="Model deployments for dropdown")
 async def list_as_deployments():
     """Return registered model endpoints shaped as DeploymentInfo for the DeploymentSelect component."""
-    return registry.list_as_deployments()
+    return await registry.list_as_deployments()
 
 
 @router.get("/{endpoint_id}", response_model=EndpointOut, summary="Get model endpoint")
 async def get_endpoint(endpoint_id: str):
-    ep = registry.get(endpoint_id)
+    ep = await registry.get(endpoint_id)
     if not ep:
         raise HTTPException(status_code=404, detail="Model endpoint not found")
     return _to_out(ep)
@@ -136,7 +136,7 @@ async def get_endpoint(endpoint_id: str):
 async def update_endpoint(endpoint_id: str, req: EndpointUpdate):
     try:
         updates = {k: v for k, v in req.model_dump().items() if v is not None}
-        ep = registry.update(endpoint_id, **updates)
+        ep = await registry.update(endpoint_id, **updates)
         return _to_out(ep)
     except KeyError:
         raise HTTPException(status_code=404, detail="Model endpoint not found")
@@ -144,16 +144,16 @@ async def update_endpoint(endpoint_id: str, req: EndpointUpdate):
 
 @router.delete("/{endpoint_id}", summary="Delete model endpoint")
 async def delete_endpoint(endpoint_id: str):
-    if not registry.get(endpoint_id):
+    if not await registry.get(endpoint_id):
         raise HTTPException(status_code=404, detail="Model endpoint not found")
-    registry.delete(endpoint_id)
+    await registry.delete(endpoint_id)
     return {"status": "deleted", "id": endpoint_id}
 
 
 @router.post("/{endpoint_id}/test", summary="Test model endpoint connectivity")
 async def test_endpoint(endpoint_id: str, req: EndpointTestRequest = EndpointTestRequest()):
     """Send a quick test prompt to verify the model endpoint is working."""
-    if not registry.get(endpoint_id):
+    if not await registry.get(endpoint_id):
         raise HTTPException(status_code=404, detail="Model endpoint not found")
     result = await registry.test_endpoint(endpoint_id, prompt=req.prompt)
     return result

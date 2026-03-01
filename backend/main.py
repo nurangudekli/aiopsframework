@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
 from backend.config import settings
-from backend.database import init_db
+from backend.database import init_db, close_db
 
 # Import all routers
 from backend.api.ab_testing import router as ab_testing_router
@@ -75,6 +75,7 @@ async def lifespan(app: FastAPI):
     logger.info("GenAI Ops Framework ready.")
     yield
     logger.info("Shutting down GenAI Ops Framework.")
+    await close_db()
 
 
 # ── App ─────────────────────────────────────────────────────────

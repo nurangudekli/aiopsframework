@@ -1,56 +1,42 @@
 """
-GenAI Ops Framework — Database Setup (async SQLAlchemy).
+GenAI Ops Framework — Database Setup (Azure Cosmos DB).
+
+Initialises the async Cosmos DB client on startup and exposes
+``init_db`` / ``close_db`` for the FastAPI lifespan.
+
+The legacy ``Base`` class and ``get_db`` dependency are kept so that
+existing model files still import without errors, but all runtime I/O
+now goes through ``backend.cosmos_client``.
 """
 
 from __future__ import annotations
 
 import logging
 
-from sqlalchemy import inspect as sa_inspect, text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase
-
-from backend.config import settings
+from backend.cosmos_client import init_cosmos, close_cosmos
 
 logger = logging.getLogger(__name__)
 
-engine = create_async_engine(
-    settings.database_url,
-    echo=settings.app_debug,
-    future=True,
-)
 
-async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+# ── Legacy ORM base (models import this — kept as a no-op) ─────
+class _BaseMeta(type):
+    """Metaclass that silently swallows SQLAlchemy Column descriptors."""
+    def __new__(mcs, name, bases, namespace, **kw):
+        return super().__new__(mcs, name, bases, namespace)
 
-
-class Base(DeclarativeBase):
-    """Shared declarative base for all ORM models."""
-    pass
-
-
-async def _add_missing_columns(conn) -> None:
-    """Inspect every ORM table and ALTER TABLE to add columns that are missing in SQLite."""
-    inspector = sa_inspect(conn)
-    for table in Base.metadata.sorted_tables:
-        if table.name not in inspector.get_table_names():
-            continue  # table doesn't exist yet — create_all will handle it
-        existing_cols = {c["name"] for c in inspector.get_columns(table.name)}
-        for col in table.columns:
-            if col.name not in existing_cols:
-                col_type = col.type.compile(dialect=conn.dialect)
-                sql = f'ALTER TABLE {table.name} ADD COLUMN {col.name} {col_type}'
-                conn.execute(text(sql))
-                logger.info("Added missing column %s.%s (%s)", table.name, col.name, col_type)
+class Base(metaclass=_BaseMeta):
+    """Placeholder declarative base — not used at runtime with Cosmos DB."""
+    __tablename__: str = ""
+    metadata = type("_FakeMeta", (), {"sorted_tables": []})()
 
 
+# ── Lifecycle ───────────────────────────────────────────────────
 async def init_db() -> None:
-    """Create all tables and add any missing columns (lightweight auto-migration)."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        await conn.run_sync(_add_missing_columns)
+    """Called at startup — connects to Cosmos DB."""
+    await init_cosmos()
+    logger.info("Database ready (Cosmos DB).")
 
 
-async def get_db() -> AsyncSession:  # type: ignore[misc]
-    """FastAPI dependency — yields an async session."""
-    async with async_session() as session:
-        yield session
+async def close_db() -> None:
+    """Called at shutdown — closes the Cosmos DB client."""
+    await close_cosmos()

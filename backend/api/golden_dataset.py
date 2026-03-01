@@ -15,10 +15,8 @@ from __future__ import annotations
 import logging
 from typing import List
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
-from backend.database import get_db
 from backend.schemas.golden_dataset import (
     GoldenDatasetCreate,
     GoldenDatasetDetailOut,
@@ -78,15 +76,15 @@ SAMPLE_DATASETS = [
 
 
 @router.post("/seed-samples", response_model=List[GoldenDatasetOut], status_code=201)
-async def seed_sample_datasets(db: AsyncSession = Depends(get_db)):
+async def seed_sample_datasets():
     """Create built-in sample golden datasets so users can try the Migration Pipeline immediately."""
     created = []
     for sample in SAMPLE_DATASETS:
         # Skip if a dataset with the same name already exists
-        existing = await list_golden_datasets(db, active_only=False)
-        if any(d.name == sample["name"] for d in existing):
+        existing = await list_golden_datasets(active_only=False)
+        if any(d.get("name") == sample["name"] for d in existing):
             # Return existing one instead of creating duplicate
-            match = next(d for d in existing if d.name == sample["name"])
+            match = next(d for d in existing if d.get("name") == sample["name"])
             created.append(match)
             continue
         payload = GoldenDatasetCreate(
@@ -95,16 +93,16 @@ async def seed_sample_datasets(db: AsyncSession = Depends(get_db)):
             tags=sample.get("tags"),
             cases=[GoldenTestCaseInput(**c) for c in sample["cases"]],
         )
-        ds = await create_golden_dataset(db, payload)
+        ds = await create_golden_dataset(payload)
         created.append(ds)
-        logger.info("Seeded sample golden dataset: %s (%d cases)", ds.name, ds.total_cases)
+        logger.info("Seeded sample golden dataset: %s (%d cases)", ds.get("name"), ds.get("total_cases"))
     return created
 
 
 @router.post("", response_model=GoldenDatasetOut, status_code=201)
-async def create(payload: GoldenDatasetCreate, db: AsyncSession = Depends(get_db)):
+async def create(payload: GoldenDatasetCreate):
     """Create a golden dataset with test cases."""
-    return await create_golden_dataset(db, payload)
+    return await create_golden_dataset(payload)
 
 
 @router.post("/upload", response_model=GoldenDatasetOut, status_code=201)
@@ -112,13 +110,12 @@ async def upload(
     file: UploadFile = File(...),
     name: str = Form(...),
     description: str = Form(""),
-    db: AsyncSession = Depends(get_db),
 ):
     """Upload an Excel/CSV/JSON file to create a golden dataset."""
     content = await file.read()
     try:
         dataset = await create_golden_dataset_from_file(
-            db, name, description, content, file.filename or "upload.csv"
+            name, description, content, file.filename or "upload.csv"
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -126,13 +123,13 @@ async def upload(
 
 
 @router.get("", response_model=List[GoldenDatasetOut])
-async def list_all(active_only: bool = True, db: AsyncSession = Depends(get_db)):
-    return await list_golden_datasets(db, active_only=active_only)
+async def list_all(active_only: bool = True):
+    return await list_golden_datasets(active_only=active_only)
 
 
 @router.get("/{dataset_id}", response_model=GoldenDatasetDetailOut)
-async def get_one(dataset_id: str, db: AsyncSession = Depends(get_db)):
-    dataset = await get_golden_dataset(db, dataset_id)
+async def get_one(dataset_id: str):
+    dataset = await get_golden_dataset(dataset_id)
     if not dataset:
         raise HTTPException(status_code=404, detail="Golden dataset not found")
     return dataset
@@ -142,17 +139,16 @@ async def get_one(dataset_id: str, db: AsyncSession = Depends(get_db)):
 async def update(
     dataset_id: str,
     payload: GoldenDatasetUpdate,
-    db: AsyncSession = Depends(get_db),
 ):
-    dataset = await update_golden_dataset(db, dataset_id, payload)
+    dataset = await update_golden_dataset(dataset_id, payload)
     if not dataset:
         raise HTTPException(status_code=404, detail="Golden dataset not found")
     return dataset
 
 
 @router.delete("/{dataset_id}", status_code=204)
-async def delete(dataset_id: str, db: AsyncSession = Depends(get_db)):
-    ok = await delete_golden_dataset(db, dataset_id)
+async def delete(dataset_id: str):
+    ok = await delete_golden_dataset(dataset_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Golden dataset not found")
 
@@ -161,10 +157,9 @@ async def delete(dataset_id: str, db: AsyncSession = Depends(get_db)):
 async def add_cases(
     dataset_id: str,
     cases: List[GoldenTestCaseInput],
-    db: AsyncSession = Depends(get_db),
 ):
     """Add additional test cases to an existing golden dataset."""
-    dataset = await add_cases_to_dataset(db, dataset_id, cases)
+    dataset = await add_cases_to_dataset(dataset_id, cases)
     if not dataset:
         raise HTTPException(status_code=404, detail="Golden dataset not found")
     return dataset

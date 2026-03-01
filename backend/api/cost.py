@@ -11,11 +11,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.database import get_db
 from backend.schemas.evaluation import CostSummary, CostSummaryRequest
 from backend.services.cost_tracker import ModelCascade, get_cost_summary, get_cost_alerts, clear_cost_alerts
 
@@ -27,16 +25,15 @@ async def summary(
     days: int = 30,
     provider: Optional[str] = None,
     deployment: Optional[str] = None,
-    db: AsyncSession = Depends(get_db),
 ):
     """Get aggregated cost summary for the given period."""
-    return await get_cost_summary(db, days=days, provider=provider, deployment=deployment)
+    return await get_cost_summary(days=days, provider=provider, deployment=deployment)
 
 
 @router.get("/alerts")
-async def alerts(limit: int = 50, db: AsyncSession = Depends(get_db)):
+async def alerts(limit: int = 50):
     """Get cost alerts and current threshold status."""
-    return await get_cost_alerts(db, limit=limit)
+    return await get_cost_alerts(limit=limit)
 
 
 @router.post("/alerts/clear")

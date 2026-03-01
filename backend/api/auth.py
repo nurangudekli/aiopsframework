@@ -12,13 +12,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.database import get_db
-from backend.models.user import User
 from backend.services.auth import (
     authenticate_user,
     create_access_token,
+    create_user,
     get_current_user,
     get_user_by_email,
     get_user_by_username,
@@ -58,45 +56,38 @@ class UserInfo(BaseModel):
 
 # ── Endpoints ──────────────────────────────────────────────────
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-async def register(payload: RegisterRequest, db: AsyncSession = Depends(get_db)):
+async def register(payload: RegisterRequest):
     """Register a new user account."""
-    if await get_user_by_username(db, payload.username):
+    if await get_user_by_username(payload.username):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username already taken")
-    if await get_user_by_email(db, payload.email):
+    if await get_user_by_email(payload.email):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
-    user = User(
-        username=payload.username,
-        email=payload.email,
-        hashed_password=hash_password(payload.password),
-    )
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
+    user = await create_user(payload.username, payload.email, hash_password(payload.password))
 
-    token = create_access_token(user.username)
-    return TokenResponse(access_token=token, username=user.username, email=user.email)
+    token = create_access_token(user["username"])
+    return TokenResponse(access_token=token, username=user["username"], email=user["email"])
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(payload: LoginRequest):
     """Authenticate with username + password, receive a JWT."""
-    user = await authenticate_user(db, payload.username, payload.password)
+    user = await authenticate_user(payload.username, payload.password)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-    token = create_access_token(user.username, extra_claims={"is_admin": user.is_admin})
-    return TokenResponse(access_token=token, username=user.username, email=user.email)
+    token = create_access_token(user["username"], extra_claims={"is_admin": user.get("is_admin", False)})
+    return TokenResponse(access_token=token, username=user["username"], email=user["email"])
 
 
 @router.get("/me", response_model=UserInfo)
-async def me(current_user: User = Depends(get_current_user)):
+async def me(current_user: dict = Depends(get_current_user)):
     """Return info about the currently authenticated user."""
     return UserInfo(
-        id=current_user.id,
-        username=current_user.username,
-        email=current_user.email,
-        is_active=current_user.is_active,
-        is_admin=current_user.is_admin,
-        created_at=current_user.created_at.isoformat() if current_user.created_at else "",
+        id=current_user["id"],
+        username=current_user["username"],
+        email=current_user["email"],
+        is_active=current_user.get("is_active", True),
+        is_admin=current_user.get("is_admin", False),
+        created_at=current_user.get("created_at", ""),
     )

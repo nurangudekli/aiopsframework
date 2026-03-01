@@ -28,7 +28,12 @@ class Settings(BaseSettings):
     app_host: str = "0.0.0.0"
     app_port: int = 8000
 
-    # --- Database ---
+    # --- Database (Cosmos DB) ---
+    cosmos_db_endpoint: str = ""
+    cosmos_db_key: str = ""
+    cosmos_db_database: str = "genaiops"
+
+    # Legacy — kept for local dev / test fallback
     database_url: str = "sqlite+aiosqlite:///./genaiops.db"
 
     # --- Azure OpenAI (Model A) ---

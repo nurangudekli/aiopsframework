@@ -9,10 +9,8 @@ from __future__ import annotations
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, HTTPException
 
-from backend.database import get_db
 from backend.schemas.prompt import (
     PromptCreate,
     PromptListOut,
@@ -113,13 +111,13 @@ SAMPLE_PROMPTS = [
 
 
 @router.post("/seed-samples", response_model=List[PromptOut], status_code=201)
-async def seed_sample_prompts(db: AsyncSession = Depends(get_db)):
+async def seed_sample_prompts():
     """Create built-in sample prompts so users can explore the system immediately."""
     created = []
     for sample in SAMPLE_PROMPTS:
-        existing = await list_prompts(db, active_only=False)
-        if any(p.name == sample["name"] for p in existing):
-            match = next(p for p in existing if p.name == sample["name"])
+        existing = await list_prompts(active_only=False)
+        if any(p.get("name") == sample["name"] for p in existing):
+            match = next(p for p in existing if p.get("name") == sample["name"])
             created.append(match)
             continue
         payload = PromptCreate(
@@ -129,41 +127,41 @@ async def seed_sample_prompts(db: AsyncSession = Depends(get_db)):
             tags=sample.get("tags"),
             initial_content=sample["initial_content"],
         )
-        prompt = await create_prompt(db, payload)
+        prompt = await create_prompt(payload)
         created.append(prompt)
-        logger.info("Seeded sample prompt: %s", prompt.name)
+        logger.info("Seeded sample prompt: %s", prompt.get("name"))
     return created
 
 
 @router.post("", response_model=PromptOut, status_code=201)
-async def create(payload: PromptCreate, db: AsyncSession = Depends(get_db)):
-    return await create_prompt(db, payload)
+async def create(payload: PromptCreate):
+    return await create_prompt(payload)
 
 
 @router.get("", response_model=List[PromptOut])
-async def list_all(active_only: bool = True, db: AsyncSession = Depends(get_db)):
-    return await list_prompts(db, active_only=active_only)
+async def list_all(active_only: bool = True):
+    return await list_prompts(active_only=active_only)
 
 
 @router.get("/{prompt_id}", response_model=PromptOut)
-async def get_one(prompt_id: str, db: AsyncSession = Depends(get_db)):
-    prompt = await get_prompt(db, prompt_id)
+async def get_one(prompt_id: str):
+    prompt = await get_prompt(prompt_id)
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
     return prompt
 
 
 @router.patch("/{prompt_id}", response_model=PromptOut)
-async def update(prompt_id: str, payload: PromptUpdate, db: AsyncSession = Depends(get_db)):
-    prompt = await update_prompt(db, prompt_id, payload)
+async def update(prompt_id: str, payload: PromptUpdate):
+    prompt = await update_prompt(prompt_id, payload)
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
     return prompt
 
 
 @router.delete("/{prompt_id}", status_code=204)
-async def delete(prompt_id: str, db: AsyncSession = Depends(get_db)):
-    ok = await delete_prompt(db, prompt_id)
+async def delete(prompt_id: str):
+    ok = await delete_prompt(prompt_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Prompt not found")
 
@@ -172,17 +170,16 @@ async def delete(prompt_id: str, db: AsyncSession = Depends(get_db)):
 async def create_version(
     prompt_id: str,
     payload: PromptVersionCreate,
-    db: AsyncSession = Depends(get_db),
 ):
-    version = await add_version(db, prompt_id, payload)
+    version = await add_version(prompt_id, payload)
     if not version:
         raise HTTPException(status_code=404, detail="Prompt not found")
     return version
 
 
 @router.get("/{prompt_id}/versions/current", response_model=PromptVersionOut)
-async def get_current(prompt_id: str, db: AsyncSession = Depends(get_db)):
-    version = await get_current_version(db, prompt_id)
+async def get_current(prompt_id: str):
+    version = await get_current_version(prompt_id)
     if not version:
         raise HTTPException(status_code=404, detail="No current version found")
     return version
@@ -192,9 +189,8 @@ async def get_current(prompt_id: str, db: AsyncSession = Depends(get_db)):
 async def activate_version(
     prompt_id: str,
     version_id: str,
-    db: AsyncSession = Depends(get_db),
 ):
-    ok = await set_current_version(db, prompt_id, version_id)
+    ok = await set_current_version(prompt_id, version_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Prompt/version not found")
     return {"status": "ok"}
@@ -204,11 +200,10 @@ async def activate_version(
 async def render(
     prompt_id: str,
     variables: dict,
-    db: AsyncSession = Depends(get_db),
 ):
     """Render the current prompt version with provided variables."""
-    version = await get_current_version(db, prompt_id)
+    version = await get_current_version(prompt_id)
     if not version:
         raise HTTPException(status_code=404, detail="No current version found")
-    rendered = render_template(version.content, variables)
-    return {"rendered": rendered, "version": version.version}
+    rendered = render_template(version.get("content", ""), variables)
+    return {"rendered": rendered, "version": version.get("version")}

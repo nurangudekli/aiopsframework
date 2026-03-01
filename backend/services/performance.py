@@ -3,7 +3,7 @@ Performance / Stress Testing Service.
 
 Fires concurrent requests against a model endpoint and collects
 latency, throughput, and error metrics.  Optionally persists results
-to the TestRun / TestCaseResult tables.
+to Azure Cosmos DB.
 """
 
 from __future__ import annotations
@@ -16,12 +16,14 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import numpy as np
-from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.cosmos_client import create_item, new_id, query_items, utcnow_iso
 from backend.schemas.evaluation import PerformanceTestRequest, PerformanceTestResult
 from backend.services.model_provider import ModelResponse, call_model, estimate_cost
 
 logger = logging.getLogger(__name__)
+
+CONTAINER = "test_runs"
 
 
 async def _single_request(
@@ -74,7 +76,7 @@ async def _single_request(
 
 async def run_performance_test(
     request: PerformanceTestRequest,
-    db: Optional[AsyncSession] = None,
+    persist: bool = True,
 ) -> PerformanceTestResult:
     """
     Execute a load / stress test against the specified model.
@@ -137,10 +139,10 @@ async def run_performance_test(
         error_details=error_details,
     )
 
-    # ── Persist to DB ───────────────────────────────────────
-    if db is not None:
+    # ── Persist to Cosmos DB ────────────────────────────────
+    if persist:
         try:
-            await _persist_performance_results(db, request, perf_result, results)
+            await _persist_performance_results(request, perf_result, results)
         except Exception as exc:
             logger.warning("Failed to persist performance results: %s", exc)
 
@@ -148,75 +150,73 @@ async def run_performance_test(
 
 
 async def _persist_performance_results(
-    db: AsyncSession,
     request: PerformanceTestRequest,
     result: PerformanceTestResult,
     raw_results: List[Dict[str, Any]],
 ) -> None:
-    """Save performance test run + individual case results to the database."""
-    from backend.models.test_run import TestRun, TestCase, TestCaseResult, TestRunStatus
+    """Save performance test run + individual case results to Cosmos DB."""
+    now = utcnow_iso()
+    run_id = new_id()
 
-    test_run = TestRun(
-        name=f"PerfTest {request.model_deployment} ({request.total_requests}req)",
-        description=f"Performance test: {request.concurrency} concurrency, {request.timeout_seconds}s timeout",
-        model_provider=request.model_provider,
-        model_deployment=request.model_deployment,
-        model_params=request.model_params,
-        status=TestRunStatus.COMPLETED,
-        total_cases=result.total_requests,
-        passed_cases=result.successful_requests,
-        failed_cases=result.failed_requests,
-        completed_at=datetime.now(timezone.utc),
-    )
-    db.add(test_run)
-    await db.flush()
-
+    cases = []
     for i, r in enumerate(raw_results):
         question = request.questions[i % len(request.questions)]
-        case = TestCase(
-            test_run_id=test_run.id,
-            index=i,
-            question=question,
-        )
-        db.add(case)
-        await db.flush()
-
-        case_result = TestCaseResult(
-            test_case_id=case.id,
-            model_label=request.model_deployment,
-            latency_ms=r.get("latency_ms"),
-            tokens_prompt=r.get("tokens_prompt"),
-            tokens_completion=r.get("tokens_completion"),
-            cost_usd=r.get("cost_usd"),
-            passed=r.get("success"),
-            error_message=r.get("error"),
-        )
-        db.add(case_result)
-
-    await db.commit()
-    logger.info("Persisted performance test run %s (%d results)", test_run.id, len(raw_results))
-
-
-async def list_performance_runs(db: AsyncSession, limit: int = 20) -> List[Dict[str, Any]]:
-    """List recent performance test runs from the database."""
-    from backend.models.test_run import TestRun
-    from sqlalchemy import select
-
-    stmt = select(TestRun).order_by(TestRun.created_at.desc()).limit(limit)
-    result = await db.execute(stmt)
-    runs = result.scalars().all()
-    return [
-        {
-            "id": r.id,
-            "name": r.name,
-            "model_provider": r.model_provider,
-            "model_deployment": r.model_deployment,
-            "status": r.status.value if hasattr(r.status, "value") else r.status,
-            "total_cases": r.total_cases,
-            "passed_cases": r.passed_cases,
-            "failed_cases": r.failed_cases,
-            "created_at": r.created_at.isoformat() if r.created_at else None,
-            "completed_at": r.completed_at.isoformat() if r.completed_at else None,
+        case_id = new_id()
+        case = {
+            "id": case_id,
+            "test_run_id": run_id,
+            "index": i,
+            "question": question,
+            "expected_answer": None,
+            "context": None,
+            "tags": None,
+            "results": [
+                {
+                    "id": new_id(),
+                    "test_case_id": case_id,
+                    "model_label": request.model_deployment,
+                    "response": None,
+                    "latency_ms": r.get("latency_ms"),
+                    "tokens_prompt": r.get("tokens_prompt"),
+                    "tokens_completion": r.get("tokens_completion"),
+                    "cost_usd": r.get("cost_usd"),
+                    "similarity_to_expected": None,
+                    "passed": r.get("success"),
+                    "error_message": r.get("error"),
+                    "created_at": now,
+                }
+            ],
         }
-        for r in runs
-    ]
+        cases.append(case)
+
+    doc = {
+        "id": run_id,
+        "name": f"PerfTest {request.model_deployment} ({request.total_requests}req)",
+        "description": f"Performance test: {request.concurrency} concurrency, {request.timeout_seconds}s timeout",
+        "source_filename": None,
+        "source_format": None,
+        "model_provider": request.model_provider,
+        "model_deployment": request.model_deployment,
+        "model_params": request.model_params,
+        "status": "completed",
+        "total_cases": result.total_requests,
+        "passed_cases": result.successful_requests,
+        "failed_cases": result.failed_requests,
+        "created_at": now,
+        "completed_at": now,
+        "cases": cases,
+    }
+    await create_item(CONTAINER, doc)
+    logger.info("Persisted performance test run %s (%d results)", run_id, len(raw_results))
+
+
+async def list_performance_runs(limit: int = 20) -> List[Dict[str, Any]]:
+    """List recent performance test runs from Cosmos DB."""
+    docs = await query_items(
+        CONTAINER,
+        "SELECT c.id, c.name, c.model_provider, c.model_deployment, c.status, "
+        "c.total_cases, c.passed_cases, c.failed_cases, c.created_at, c.completed_at "
+        "FROM c ORDER BY c.created_at DESC OFFSET 0 LIMIT @limit",
+        parameters=[{"name": "@limit", "value": limit}],
+    )
+    return docs

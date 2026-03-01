@@ -16,6 +16,8 @@
 #   AZURE_OPENAI_ENDPOINT          - (optional) Azure OpenAI endpoint URL
 #   AZURE_OPENAI_DEPLOYMENT_NAME   - (optional) Azure OpenAI deployment name
 #   AZURE_OPENAI_API_VERSION       - (optional) e.g. 2024-06-01
+#   COSMOS_DB_ENDPOINT             - Azure Cosmos DB endpoint URL
+#   COSMOS_DB_KEY                  - Azure Cosmos DB primary key
 # ─────────────────────────────────────────────────────────────
 
 name: Deploy to Azure App Service
@@ -89,7 +91,9 @@ jobs:
                 AZURE_OPENAI_API_KEY="${{ secrets.AZURE_OPENAI_API_KEY }}" \
                 AZURE_OPENAI_ENDPOINT="${{ secrets.AZURE_OPENAI_ENDPOINT }}" \
                 AZURE_OPENAI_DEPLOYMENT_NAME="${{ secrets.AZURE_OPENAI_DEPLOYMENT_NAME }}" \
-                AZURE_OPENAI_API_VERSION="${{ secrets.AZURE_OPENAI_API_VERSION }}"
+                AZURE_OPENAI_API_VERSION="${{ secrets.AZURE_OPENAI_API_VERSION }}" \
+                COSMOS_DB_ENDPOINT="${{ secrets.COSMOS_DB_ENDPOINT }}" \
+                COSMOS_DB_KEY="${{ secrets.COSMOS_DB_KEY }}"
 
       # ── 7. Verify deployment ──────────────────────────
       - name: Health check
