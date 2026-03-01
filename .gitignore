@@ -52,5 +52,5 @@ htmlcov/
 data/
 
 # Package lock at root level (project root is not an npm package)
-package.json
-package-lock.json
+/package.json
+/package-lock.json
