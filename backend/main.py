@@ -154,8 +154,8 @@ async def health():
     return {"status": "healthy", "service": settings.app_name}
 
 
-@app.get("/", tags=["Health"])
-async def root():
+@app.get("/api/info", tags=["Health"])
+async def api_info():
     return {
         "service": settings.app_name,
         "version": "0.1.0",
@@ -194,6 +194,11 @@ if _STATIC_DIR.is_dir() and (_STATIC_DIR / "index.html").exists():
     # Serve static assets (JS, CSS, images)
     app.mount("/assets", StaticFiles(directory=_STATIC_DIR / "assets"), name="assets")
 
+    # Root serves the SPA
+    @app.get("/", include_in_schema=False)
+    async def serve_root():
+        return FileResponse(_STATIC_DIR / "index.html")
+
     # SPA catch-all: any non-API, non-file route returns index.html
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa(full_path: str):
@@ -201,3 +206,8 @@ if _STATIC_DIR.is_dir() and (_STATIC_DIR / "index.html").exists():
         if full_path and file_path.is_file():
             return FileResponse(file_path)
         return FileResponse(_STATIC_DIR / "index.html")
+else:
+    # Dev mode: no frontend built, return JSON info
+    @app.get("/", tags=["Health"])
+    async def root():
+        return {"service": settings.app_name, "version": "0.1.0", "docs": "/docs"}
