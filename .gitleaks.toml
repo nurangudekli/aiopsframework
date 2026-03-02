@@ -1,0 +1,43 @@
+# =============================================================================
+# Gitleaks Configuration - Secret Scanning
+# =============================================================================
+# Prevents accidental commits of secrets, API keys, and credentials.
+# Install: https://github.com/gitleaks/gitleaks#installing
+# Usage:   gitleaks detect --source . --verbose
+#          gitleaks protect --staged --verbose  (pre-commit)
+
+title = "GenAI Ops Framework - Gitleaks Config"
+
+[extend]
+# Use the default gitleaks rules as a baseline
+useDefault = true
+
+# --- Custom rules for Azure-specific secrets ---
+
+[[rules]]
+id = "azure-openai-api-key"
+description = "Azure OpenAI API Key"
+regex = '''(?i)(azure[_-]?openai[_-]?api[_-]?key\s*[=:]\s*)[A-Za-z0-9+/]{30,}'''
+tags = ["azure", "openai", "key"]
+
+[[rules]]
+id = "cosmos-db-key"
+description = "Azure Cosmos DB Key"
+regex = '''[A-Za-z0-9+/]{60,}=='''
+tags = ["azure", "cosmosdb", "key"]
+
+[[rules]]
+id = "azure-cognitive-services-key"
+description = "Azure Cognitive Services Key"
+regex = '''(?i)(cognitive|openai|ai[_-]?services)[_-]?(key|secret|token)\s*[=:]\s*[A-Za-z0-9]{20,}'''
+tags = ["azure", "cognitive", "key"]
+
+# --- Allowlists to reduce false positives ---
+
+[allowlist]
+description = "Global allowlist"
+paths = [
+    '''package-lock\.json$''',
+    '''\.gitleaks\.toml$''',
+    '''\.env\.example$''',
+]

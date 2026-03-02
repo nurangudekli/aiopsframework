@@ -18,10 +18,16 @@ frontend/dist/
 frontend/build/
 .next/
 
-# Environment
+# Environment & Secrets
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*credentials*.json
+*serviceaccount*.json
 
 # IDE
 .vscode/

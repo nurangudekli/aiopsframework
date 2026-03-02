@@ -1,0 +1,26 @@
+# =============================================================================
+# Pre-commit hooks - Secret Scanning & Code Quality
+# =============================================================================
+# Install: pip install pre-commit && pre-commit install
+# Run all: pre-commit run --all-files
+
+repos:
+  # --- Secret scanning with gitleaks ---
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+
+  # --- Prevent large files from being committed ---
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: detect-private-key
+      - id: check-merge-conflict
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: no-commit-to-branch
+        args: ['--branch', 'main']
+        stages: [commit]
