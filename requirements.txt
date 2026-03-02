@@ -38,6 +38,8 @@ redis>=5.0.0
 # Security
 PyJWT>=2.8.0
 passlib>=1.7.4
+cryptography>=42.0.0
+bcrypt>=4.1.0
 
 # Monitoring
 prometheus-client>=0.20.0
@@ -53,6 +55,9 @@ azure-mgmt-loganalytics>=13.0.0
 
 # Azure Cosmos DB
 azure-cosmos>=4.7.0
+
+# Azure Key Vault (optional — for loading secrets from Key Vault)
+azure-keyvault-secrets>=4.8.0
 
 # Azure Blob Storage
 azure-storage-blob>=12.19.0

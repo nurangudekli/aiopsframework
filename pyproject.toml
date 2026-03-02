@@ -42,6 +42,8 @@ dependencies = [
     # Security
     "PyJWT>=2.8.0",
     "passlib>=1.7.4",
+    "cryptography>=42.0.0",
+    "bcrypt>=4.1.0",
     # Monitoring
     "prometheus-client>=0.20.0",
     # Azure SDK (for deployment scanning & metrics)
@@ -54,6 +56,8 @@ dependencies = [
     "azure-mgmt-loganalytics>=13.0.0",
     # Azure Cosmos DB
     "azure-cosmos>=4.7.0",
+    # Azure Key Vault (for loading secrets at startup)
+    "azure-keyvault-secrets>=4.8.0",
     # Azure Blob Storage
     "azure-storage-blob>=12.19.0",
     # Azure AI Foundry Evaluation SDK

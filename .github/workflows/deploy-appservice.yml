@@ -18,6 +18,8 @@
 #   AZURE_OPENAI_API_VERSION       - (optional) e.g. 2024-06-01
 #   COSMOS_DB_ENDPOINT             - Azure Cosmos DB endpoint URL
 #   COSMOS_DB_KEY                  - Azure Cosmos DB primary key
+#   SECRET_KEY                     - (optional) JWT signing key — auto-generated if not set
+#   AZURE_KEYVAULT_URL             - (optional) Key Vault URL to load secrets at runtime
 # ─────────────────────────────────────────────────────────────
 
 name: Deploy to Azure App Service
@@ -93,7 +95,9 @@ jobs:
                 AZURE_OPENAI_DEPLOYMENT_NAME="${{ secrets.AZURE_OPENAI_DEPLOYMENT_NAME }}" \
                 AZURE_OPENAI_API_VERSION="${{ secrets.AZURE_OPENAI_API_VERSION }}" \
                 COSMOS_DB_ENDPOINT="${{ secrets.COSMOS_DB_ENDPOINT }}" \
-                COSMOS_DB_KEY="${{ secrets.COSMOS_DB_KEY }}"
+                COSMOS_DB_KEY="${{ secrets.COSMOS_DB_KEY }}" \
+                SECRET_KEY="${{ secrets.SECRET_KEY }}" \
+                AZURE_KEYVAULT_URL="${{ secrets.AZURE_KEYVAULT_URL }}"
 
       # ── 7. Verify deployment ──────────────────────────
       - name: Health check

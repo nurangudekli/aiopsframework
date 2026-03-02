@@ -11,17 +11,21 @@ Supports:
   - Any OpenAI-compatible HTTP model endpoint
 
 Storage: Azure Cosmos DB (endpoint_registry container).
-API keys are kept in memory at runtime; the Cosmos document stores
-the encrypted/plain key (use Azure Key Vault in production).
+API keys are encrypted at rest using Fernet (symmetric AES-128-CBC)
+derived from the application SECRET_KEY.  At runtime they are kept in
+memory in plaintext only for the duration of model calls.
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import logging
 import uuid
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional
+
+from cryptography.fernet import Fernet, InvalidToken
 
 from backend.cosmos_client import (
     create_item,
@@ -35,6 +39,33 @@ from backend.cosmos_client import (
 logger = logging.getLogger(__name__)
 
 CONTAINER = "endpoint_registry"
+
+
+# ── Encryption helpers ──────────────────────────────────────────
+def _get_fernet() -> Fernet:
+    """Derive a Fernet key from the application SECRET_KEY."""
+    from backend.config import settings
+    digest = hashlib.sha256(settings.secret_key.encode()).digest()
+    key = base64.urlsafe_b64encode(digest)          # 44-byte URL-safe base64
+    return Fernet(key)
+
+
+def _encrypt_key(plaintext: str) -> str:
+    """Encrypt an API key. Returns a base64 token string."""
+    if not plaintext:
+        return ""
+    return _get_fernet().encrypt(plaintext.encode()).decode()
+
+
+def _decrypt_key(ciphertext: str) -> str:
+    """Decrypt an API key. Returns plaintext or empty string on failure."""
+    if not ciphertext:
+        return ""
+    try:
+        return _get_fernet().decrypt(ciphertext.encode()).decode()
+    except (InvalidToken, Exception) as exc:
+        logger.warning("Failed to decrypt API key (key may have been rotated): %s", exc)
+        return ""
 
 
 # ── Data model ──────────────────────────────────────────────────
@@ -77,7 +108,9 @@ class EndpointRegistry:
             docs = await query_items(CONTAINER, "SELECT * FROM c")
             for d in docs:
                 eid = d.get("id", "")
-                encrypted_key = d.get("_api_key_encrypted", "")
+                encrypted_token = d.get("_api_key_encrypted", "")
+                # Decrypt the API key from Cosmos → memory only
+                plaintext_key = _decrypt_key(encrypted_token)
                 ep = RegisteredEndpoint(
                     id=eid,
                     name=d.get("name", ""),
@@ -92,10 +125,11 @@ class EndpointRegistry:
                     tags=d.get("tags", {}),
                     created_at=d.get("created_at", ""),
                     updated_at=d.get("updated_at", ""),
-                    _api_key_encrypted=encrypted_key,
+                    _api_key_encrypted=encrypted_token,
                 )
                 self._endpoints[eid] = ep
-                self._api_keys[eid] = encrypted_key
+                # Store plaintext key in memory dict only
+                self._api_keys[eid] = plaintext_key
             logger.info("Loaded %d endpoint(s) from Cosmos DB", len(self._endpoints))
         except Exception as exc:
             logger.warning("Failed to load endpoints from Cosmos DB: %s", exc)
@@ -132,11 +166,11 @@ class EndpointRegistry:
             tags=tags or {},
             created_at=now,
             updated_at=now,
-            _api_key_encrypted=api_key,
+            _api_key_encrypted="",  # will be set by _save()
         )
         self._endpoints[eid] = ep
-        self._api_keys[eid] = api_key
-        await self._save(ep)
+        self._api_keys[eid] = api_key  # plaintext in memory only
+        await self._save(ep, plaintext_key=api_key)
         logger.info("Registered model endpoint %s (%s / %s)", eid, provider, deployment_name)
         return ep
 
@@ -145,15 +179,16 @@ class EndpointRegistry:
         ep = self._endpoints.get(eid)
         if not ep:
             raise KeyError(f"Endpoint {eid} not found")
+        new_plaintext_key = None
         for k, v in updates.items():
             if k == "api_key" and v:
                 ep.api_key_hash = _hash_key(v)
-                ep._api_key_encrypted = v
-                self._api_keys[eid] = v
+                self._api_keys[eid] = v  # plaintext in memory only
+                new_plaintext_key = v
             elif hasattr(ep, k):
                 setattr(ep, k, v)
         ep.updated_at = utcnow_iso()
-        await self._save(ep)
+        await self._save(ep, plaintext_key=new_plaintext_key or self._api_keys.get(eid, ""))
         return ep
 
     async def delete(self, eid: str) -> None:
@@ -175,11 +210,16 @@ class EndpointRegistry:
         return sorted(eps, key=lambda e: e.name.lower())
 
     def get_api_key(self, eid: str) -> str:
+        """Return the plaintext API key from memory (never from Cosmos)."""
         if eid in self._api_keys:
             return self._api_keys[eid]
+        # Fallback: try decrypting from the endpoint object
         ep = self._endpoints.get(eid)
         if ep and ep._api_key_encrypted:
-            return ep._api_key_encrypted
+            decrypted = _decrypt_key(ep._api_key_encrypted)
+            if decrypted:
+                self._api_keys[eid] = decrypted
+                return decrypted
         return ""
 
     async def find_by_deployment(self, deployment_name: str) -> Optional[RegisteredEndpoint]:
@@ -243,10 +283,15 @@ class EndpointRegistry:
         return results
 
     # ── Persistence ─────────────────────────────────────────────
-    async def _save(self, ep: RegisteredEndpoint) -> None:
-        """Upsert a single endpoint document to Cosmos DB."""
+    async def _save(self, ep: RegisteredEndpoint, plaintext_key: str = "") -> None:
+        """Upsert a single endpoint document to Cosmos DB.
+
+        API keys are encrypted before storage — never stored in plaintext.
+        """
         d = asdict(ep)
-        d["_api_key_encrypted"] = ep._api_key_encrypted
+        # Encrypt the API key before writing to Cosmos DB
+        key_to_encrypt = plaintext_key or self._api_keys.get(ep.id, "")
+        d["_api_key_encrypted"] = _encrypt_key(key_to_encrypt)
         await upsert_item(CONTAINER, d)
 
 
