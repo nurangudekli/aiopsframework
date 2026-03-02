@@ -10,11 +10,13 @@ from __future__ import annotations
 import logging
 import os
 import time
+import traceback
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
@@ -102,6 +104,17 @@ app.add_middleware(
 )
 
 # ── Register routers ───────────────────────────────────────────
+
+# ── Global exception handler (surfaces tracebacks in non-prod) ─
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception):
+    tb = traceback.format_exc()
+    logger.error("Unhandled exception on %s %s:\n%s", request.method, request.url, tb)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc), "traceback": tb},
+    )
+
 app.include_router(ab_testing_router, prefix="/api")
 app.include_router(prompts_router, prefix="/api")
 app.include_router(evaluation_router, prefix="/api")

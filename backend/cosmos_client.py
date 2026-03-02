@@ -152,7 +152,6 @@ async def query_items(
     async for item in container.query_items(
         query=query,
         parameters=parameters or [],
-        enable_cross_partition_query=(partition_key is None),
         **kwargs,
     ):
         items.append(item)

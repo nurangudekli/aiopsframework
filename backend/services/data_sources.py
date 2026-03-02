@@ -144,7 +144,6 @@ async def fetch_cosmos_db(
 
     items = list(container.query_items(
         query=query,
-        enable_cross_partition_query=True,
         max_item_count=max_items,
     ))
 
